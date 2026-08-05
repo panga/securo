@@ -784,6 +784,7 @@ function TransactionForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
+            className="bg-card"
           />
         )}
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
@@ -822,13 +823,14 @@ function TransactionForm({
               onChange={(e) => handleAmountChange(e.target.value)}
               required
               disabled={isSynced}
+              className="bg-card"
             />
           )}
         </div>
         <div className="space-y-2">
           <Label>{t('transactions.currency')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={currency}
             onChange={(e) => handleCurrencyChange(e.target.value)}
             disabled={isSynced}
@@ -878,6 +880,7 @@ function TransactionForm({
                   value={convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
+                  className="bg-card"
                 />
               )}
             </div>
@@ -889,6 +892,7 @@ function TransactionForm({
                 value={fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
+                className="bg-card"
               />
             </div>
           </div>
@@ -898,7 +902,7 @@ function TransactionForm({
         <div className="space-y-2">
           <Label>{t('transactions.type')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
             disabled={isSynced}
@@ -915,6 +919,7 @@ function TransactionForm({
             categories={categories}
             groups={categoryGroups}
             allowNone={true}
+            className="bg-card"
           />
         </div>
       </div>
@@ -922,7 +927,7 @@ function TransactionForm({
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={payeeId}
             onChange={(e) => setPayeeId(e.target.value)}
           >
@@ -939,7 +944,7 @@ function TransactionForm({
           <div className="space-y-2">
             <Label>{t('transactions.account')}</Label>
             <select
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               required
@@ -955,7 +960,7 @@ function TransactionForm({
       <div className="space-y-2">
         <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
         <textarea
-          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -1051,7 +1056,7 @@ function TransactionForm({
               <div className="space-y-2">
                 <Label>{t('recurring.frequency')}</Label>
                 <select
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
                 >
