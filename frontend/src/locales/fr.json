@@ -800,6 +800,7 @@
     "generatePending": "Générer les transactions en attente",
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
+    "autoGenerateHelpAhead": "Crée des transactions en attente, une période à l'avance, afin que vous voyiez les factures à venir. Elles ne passent à confirmées que lorsque la banque confirme le prélèvement. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et les afficher uniquement comme à venir jusque-là.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier."
   },
   "rules": {

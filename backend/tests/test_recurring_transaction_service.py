@@ -439,7 +439,8 @@ async def test_generate_pending(session: AsyncSession, test_user, test_workspace
         ),
     )
 
-    count = await generate_pending(session, test_user.id, up_to=date(2025, 3, 15))
+    with _without_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 3, 15))
     assert count == 3  # Jan, Feb, Mar
 
     # Verify transactions were created
@@ -478,7 +479,8 @@ async def test_generate_pending_quarterly_respects_end_date(
         ),
     )
 
-    count = await generate_pending(session, test_user.id, up_to=date(2024, 12, 31))
+    with _without_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2024, 12, 31))
     assert count == 3
 
     result = await session.execute(
@@ -518,7 +520,8 @@ async def test_generate_pending_deactivates_past_end_date(
         ),
     )
 
-    count = await generate_pending(session, test_user.id, up_to=date(2025, 12, 31))
+    with _without_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 12, 31))
     # Should create Jan and Feb (Feb 1 <= Feb 15), then deactivate
     assert count == 2
 
@@ -543,9 +546,392 @@ async def test_generate_pending_no_duplicates(
         ),
     )
 
-    # Generate once
-    count1 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
-    # Generate again with same cutoff — should produce 0
-    count2 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
+    with _without_ahead():
+        # Generate once
+        count1 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
+        # Generate again with same cutoff — should produce 0
+        count2 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
     assert count1 == 3
     assert count2 == 0
+
+
+# ---------------------------------------------------------------------------
+# generate_pending with RECURRING_GENERATE_AHEAD (flag ON)
+# ---------------------------------------------------------------------------
+
+
+def _ahead_settings(ahead: bool = True):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(recurring_generate_ahead=ahead)
+
+
+def _with_ahead():
+    from unittest.mock import patch
+
+    return patch(
+        "app.services.recurring_transaction_service.get_settings",
+        return_value=_ahead_settings(True),
+    )
+
+
+def _without_ahead():
+    from unittest.mock import patch
+
+    return patch(
+        "app.services.recurring_transaction_service.get_settings",
+        return_value=_ahead_settings(False),
+    )
+
+
+async def _generated_rows(session: AsyncSession, description: str) -> list[Transaction]:
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.source == "recurring",
+            Transaction.description == description,
+        )
+        .order_by(Transaction.date)
+    )
+    return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_creates_pending_row_beyond_cutoff(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: one occurrence is created beyond the cutoff, always pending,
+    and next_occurrence stays at the next actual due date (not advanced past the ahead row)."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Ahead Sub",
+            amount=Decimal("29.90"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+
+    # Jan 1 (due, loop) + Feb 1 (ahead step) = 2 pending rows.
+    assert count == 2
+    rows = await _generated_rows(session, "Ahead Sub")
+    assert [r.date for r in rows] == [date(2025, 1, 1), date(2025, 2, 1)]
+    assert all(r.status == "pending" for r in rows)
+
+    await session.refresh(rec)
+    # next_occurrence stays at the next actual due date (Feb 1)
+    assert rec.next_occurrence == date(2025, 2, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_backlog_all_pending(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON, backlog catch-up: loop rows (due occurrences) are pending too,
+    not just the ahead row."""
+    await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Backlog Sub",
+            amount=Decimal("10"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
+
+    # Jan, Feb, Mar (loop) + Apr (ahead) = 4 pending rows.
+    assert count == 4
+    rows = await _generated_rows(session, "Backlog Sub")
+    assert [r.date for r in rows] == [
+        date(2025, 1, 1),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
+    ]
+    assert all(r.status == "pending" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_idempotent(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: re-running with the same cutoff creates no duplicates."""
+    await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Idem Sub",
+            amount=Decimal("5"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count1 = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+        count2 = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+
+    assert count1 == 2
+    assert count2 == 0
+    assert len(await _generated_rows(session, "Idem Sub")) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_no_auto_flip(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: later generate_pending runs leave generated rows pending —
+    they are never auto-flipped to posted."""
+    await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="NoFlip Sub",
+            amount=Decimal("7"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count1 = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+        # A later run (next period) still materializes more, but never flips.
+        count2 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
+
+    assert count1 == 2  # Jan (loop) + Feb (ahead)
+    assert count2 == 2  # Mar (loop) + Apr (ahead)
+    rows = await _generated_rows(session, "NoFlip Sub")
+    assert len(rows) == 4
+    assert all(r.status == "pending" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_end_date_deactivates(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: ahead date beyond end_date → no ahead row, rule deactivates."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Short Ahead",
+            amount=Decimal("12"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 1, 15),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+
+    # Only the due Jan row exists; the ahead date (Feb 1) is past end_date.
+    assert count == 1
+    rows = await _generated_rows(session, "Short Ahead")
+    assert [r.date for r in rows] == [date(2025, 1, 1)]
+    assert rows[0].status == "pending"
+
+    await session.refresh(rec)
+    assert rec.is_active is False
+    # next_occurrence stays at Feb 1 (next due date, past end_date)
+    assert rec.next_occurrence == date(2025, 2, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_real_tx_linked_not_duplicated(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: a real transaction already covering the ahead date is linked,
+    no duplicate placeholder is written for it."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Netflix Subscription",
+            amount=Decimal("39.90"),
+            type="debit",
+            currency="BRL",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+    # Real (manual) charge already covers the ahead date (Feb 1).
+    real = Transaction(
+        user_id=test_user.id,
+        account_id=test_account_for_recurring.id,
+        description="NETFLIX SUBSCRIPTION",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        date=date(2025, 2, 1),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    session.add(real)
+    await session.commit()
+
+    with _with_ahead():
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 1))
+
+    # Jan placeholder only; Feb is covered by the linked real charge.
+    assert count == 1
+    rows = await _generated_rows(session, "Netflix Subscription")
+    assert [r.date for r in rows] == [date(2025, 1, 1)]
+
+    await session.refresh(real)
+    assert real.recurring_transaction_id == rec.id
+
+    await session.refresh(rec)
+    # next_occurrence stays at Feb 1 (next due date, real tx covers ahead date)
+    assert rec.next_occurrence == date(2025, 2, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_steady_state_materializes_one_period_ahead(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON, plan timeline: a rule created Dec 1 materializes Jan 1 (ahead)
+    on the Dec 1 run. On the Jan 1 run the loop is empty (Jan is already
+    pending), but the ahead step still materializes Feb 1 — one period ahead —
+    because next_occurrence is exactly the first pattern occurrence after the
+    cutoff. This is the steady state that a SELECT restricted to due rules
+    would silently miss."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Steady Sub",
+            amount=Decimal("15"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 12, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        count1 = await generate_pending(session, test_user.id, up_to=date(2025, 12, 1))
+    assert count1 == 2  # Dec 1 (due) + Jan 1 (ahead)
+    assert [r.date for r in await _generated_rows(session, "Steady Sub")] == [
+        date(2025, 12, 1),
+        date(2026, 1, 1),
+    ]
+
+    # Steady state: run on Jan 1 with next_occurrence already at Feb 1.
+    with _with_ahead():
+        count2 = await generate_pending(session, test_user.id, up_to=date(2026, 1, 1))
+    assert count2 == 1  # only Feb 1 (ahead); Jan is already materialized
+    rows = await _generated_rows(session, "Steady Sub")
+    assert [r.date for r in rows] == [
+        date(2025, 12, 1),
+        date(2026, 1, 1),
+        date(2026, 2, 1),
+    ]
+    assert all(r.status == "pending" for r in rows)
+
+    await session.refresh(rec)
+    # next_occurrence stays at Feb 1 (next actual due date)
+    assert rec.next_occurrence == date(2026, 2, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_no_runaway_between_occurrences(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: a run between occurrence dates must not keep pulling the
+    pointer forward. After the steady state, a cutoff that is not an
+    occurrence date leaves next_occurrence (the next due date) alone
+    until the next occurrence date arrives."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="NoRunaway Sub",
+            amount=Decimal("9"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 12, 1),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    with _with_ahead():
+        await generate_pending(session, test_user.id, up_to=date(2025, 12, 1))
+        # Between occurrences: next is Jan 1 (next actual due date, already
+        # materialized as ahead row).
+        count = await generate_pending(session, test_user.id, up_to=date(2025, 12, 10))
+
+    assert count == 0
+    assert len(await _generated_rows(session, "NoRunaway Sub")) == 2
+    await session.refresh(rec)
+    # next_occurrence stays at Jan 1 (next actual due date)
+    assert rec.next_occurrence == date(2026, 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_ahead_day_of_month_one_period_ahead(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    """Flag ON: a day-15 bill materializes its nearest upcoming occurrence one
+    period ahead — Jan 15 on the Jan 1 run, Feb 15 on the Jan 15 run — and a
+    run in between does not advance it further."""
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Mid Month Sub",
+            amount=Decimal("20"),
+            type="debit",
+            frequency="monthly",
+            day_of_month=15,
+            start_date=date(2026, 1, 15),
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    # Cutoff Jan 1: Jan 15 is the first occurrence after the cutoff.
+    with _with_ahead():
+        count1 = await generate_pending(session, test_user.id, up_to=date(2026, 1, 1))
+    assert count1 == 1
+    assert [r.date for r in await _generated_rows(session, "Mid Month Sub")] == [
+        date(2026, 1, 15)
+    ]
+    await session.refresh(rec)
+    # next_occurrence stays at Jan 15 (next actual due date)
+    assert rec.next_occurrence == date(2026, 1, 15)
+
+    # Cutoff Jan 15: Feb 15 is now the nearest upcoming occurrence.
+    with _with_ahead():
+        count2 = await generate_pending(session, test_user.id, up_to=date(2026, 1, 15))
+    assert count2 == 1
+    assert [r.date for r in await _generated_rows(session, "Mid Month Sub")] == [
+        date(2026, 1, 15),
+        date(2026, 2, 15),
+    ]
+    await session.refresh(rec)
+    # next_occurrence stays at Feb 15 (next actual due date)
+    assert rec.next_occurrence == date(2026, 2, 15)
+
+    # Cutoff Jan 20: nothing new until Feb 15 arrives.
+    with _with_ahead():
+        count3 = await generate_pending(session, test_user.id, up_to=date(2026, 1, 20))
+    assert count3 == 0

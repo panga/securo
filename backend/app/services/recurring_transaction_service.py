@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
@@ -170,6 +171,33 @@ def _advance_date(
     return _advance_months(current, 1, target_day)
 
 
+def _first_occurrence_after(
+    recurring: "RecurringTransaction", cutoff: date
+) -> Optional[date]:
+    """Return the pattern's next occurrence strictly after ``cutoff``.
+
+    Walks from just before ``cutoff`` (bounded by a per-frequency window that
+    always covers at least one full period), so the walk stays short even for
+    very old rules. Returns ``None`` when the pattern has no occurrence past
+    ``cutoff``.
+
+    Used by the RECURRING_GENERATE_AHEAD ahead step: ``next_occurrence`` is
+    only pre-materialized when it is exactly the occurrence that follows the
+    current period — i.e. one period ahead — which keeps repeated runs
+    idempotent and never lets the pointer run further ahead than one period.
+    """
+    intended_day = recurring.day_of_month or recurring.start_date.day
+    window = {"weekly": 14, "monthly": 62, "quarterly": 130, "yearly": 400}.get(
+        recurring.frequency, 62
+    )
+    current = max(recurring.start_date, cutoff - timedelta(days=window))
+    guard = 0
+    while current <= cutoff and guard < 20:
+        current = _advance_date(current, recurring.frequency, intended_day=intended_day)
+        guard += 1
+    return current if current > cutoff else None
+
+
 def get_occurrences_in_range(
     start: date, frequency: str, end_date: Optional[date],
     range_start: date, range_end: date,
@@ -204,14 +232,18 @@ async def generate_pending(
     transactions for future months when the user navigates ahead.
     Returns the count of transactions generated."""
     cutoff = up_to or date.today()
+    ahead = get_settings().recurring_generate_ahead
 
+    # Select every active auto_generate rule, not just those due at the cutoff.
+    # With RECURRING_GENERATE_AHEAD the ahead step also pre-materializes rules
+    # whose next_occurrence is exactly one period ahead of the cutoff; the
+    # per-rule gate below keeps that (and every repeat run) idempotent.
     result = await session.execute(
         select(RecurringTransaction)
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.auto_generate == True,
-            RecurringTransaction.next_occurrence <= cutoff,
         )
     )
     recurring_list = list(result.scalars().all())
@@ -223,12 +255,36 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
+        loop_ran = False
         # Generate transactions until next_occurrence is past the cutoff
         while recurring.next_occurrence <= cutoff:
+            loop_ran = True
             # Check if past end_date
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
                 break
+
+            # If a recurring placeholder already exists for this occurrence,
+            # skip it to avoid duplicates (idempotency). This handles the case
+            # where we ran the ahead step earlier and next_occurrence still
+            # points at that same date.
+            result = await session.execute(
+                select(Transaction).where(
+                    Transaction.recurring_transaction_id == recurring.id,
+                    Transaction.date == recurring.next_occurrence,
+                    Transaction.source == "recurring",
+                )
+            )
+            existing_recurring = result.scalar_one_or_none()
+            if existing_recurring is not None:
+                # Placeholder already exists — just advance the pointer
+                recurring.next_occurrence = _advance_date(
+                    recurring.next_occurrence, recurring.frequency,
+                    intended_day=recurring.day_of_month or recurring.start_date.day,
+                )
+                if recurring.end_date and recurring.next_occurrence > recurring.end_date:
+                    recurring.is_active = False
+                continue
 
             # If a real transaction (synced/imported/manual) already covers this
             # occurrence, link it to the bill instead of writing a duplicate
@@ -252,6 +308,7 @@ async def generate_pending(
                     type=recurring.type,
                     source="recurring",
                     recurring_transaction_id=recurring.id,
+                    status="pending" if ahead else None,  # flag ON → all pending; OFF → model default (posted)
                 )
                 account = await session.get(Account, recurring.account_id)
                 apply_effective_date(transaction, account)
@@ -269,6 +326,62 @@ async def generate_pending(
             # Check again if past end_date after advancing
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
+
+        # Global flag RECURRING_GENERATE_AHEAD: materialize the next occurrence
+        # as pending so auto_generate bills show the upcoming one ahead of time.
+        # It never auto-flips to posted here — only a real synced/imported
+        # charge merging into it (or a manual edit) upgrades it.
+        # IMPORTANT: We do NOT advance next_occurrence past the ahead row.
+        # next_occurrence stays at the next actual due date, so the UI shows
+        # when the bill is actually due. The pointer only advances when the
+        # while loop above processes an occurrence that is <= cutoff.
+        if ahead:
+            ahead_date = recurring.next_occurrence
+            next_is_first = _first_occurrence_after(recurring, cutoff) == ahead_date
+            if recurring.end_date and ahead_date > recurring.end_date:
+                recurring.is_active = False  # series over; nothing left to pre-generate
+            elif loop_ran or next_is_first:
+                # A recurring placeholder may already exist for this ahead date
+                # (idempotency: running the ahead step twice should not create
+                # duplicates). A real transaction may also already cover it
+                # (e.g. a manual entry) — link it instead of duplicating.
+                result = await session.execute(
+                    select(Transaction).where(
+                        Transaction.recurring_transaction_id == recurring.id,
+                        Transaction.date == ahead_date,
+                        Transaction.source == "recurring",
+                    )
+                )
+                existing_recurring = result.scalar_one_or_none()
+                if existing_recurring is None:
+                    existing_real = await recurring_match_service.find_real_tx_for_occurrence(
+                        session, recurring, ahead_date
+                    )
+                    if existing_real is not None:
+                        existing_real.recurring_transaction_id = recurring.id
+                    else:
+                        transaction = Transaction(
+                            user_id=user_id,
+                            account_id=recurring.account_id,
+                            category_id=recurring.category_id,
+                            description=recurring.description,
+                            amount=recurring.amount,
+                            currency=recurring.currency,
+                            date=ahead_date,
+                            type=recurring.type,
+                            source="recurring",
+                            recurring_transaction_id=recurring.id,
+                            status="pending",  # future expectation, not a settled charge
+                        )
+                        account = await session.get(Account, recurring.account_id)
+                        apply_effective_date(transaction, account)
+                        session.add(transaction)
+                        await session.flush()
+                        await stamp_primary_amount(session, user_id, transaction)
+                        count += 1
+                # Do NOT advance next_occurrence here — it stays at the next
+                # actual due date. The while loop will advance it when that
+                # date is <= cutoff on a future run.
 
     await session.commit()
     return count

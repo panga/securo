@@ -20,5 +20,6 @@ async def get_app_info():
         "features": {
             "agents": _flag("AGENTS_ENABLED"),
             "tesouro_direto": _flag("TESOURO_DIRETO_ENABLED"),
+            "recurring_generate_ahead": _flag("RECURRING_GENERATE_AHEAD"),
         },
     }

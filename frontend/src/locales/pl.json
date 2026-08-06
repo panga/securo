@@ -845,6 +845,7 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
+    "autoGenerateHelpAhead": "Tworzy transakcje jako oczekujące, jeden okres z wyprzedzeniem, abyś widział nadchodzące rachunki. Stają się potwierdzone dopiero po potwierdzeniu obciążenia przez bank. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić."
   },
   "rules": {
