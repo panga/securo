@@ -1,7 +1,6 @@
 from functools import lru_cache
 from os import getenv
 from pathlib import Path
-
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,12 +25,52 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
     # Pluggy
+    # Support multiple clients via comma-separated values.
+    # Single value (legacy) works for backward compatibility.
+    # When multiple clients configured, the first pair (index 0) is the default.
     pluggy_client_id: str = ""
     pluggy_client_secret: SecretStr = SecretStr("")
     # Empty means "derive from FRONTEND_URL" (see BankProvider.redirect_uri).
     # Set explicitly only when the URL registered in the provider dashboard
     # differs from where the app is served.
     pluggy_oauth_redirect_uri: str = ""
+
+    @property
+    def pluggy_client_ids(self) -> list[str]:
+        """Return list of configured Pluggy client IDs."""
+        if not self.pluggy_client_id:
+            return []
+        return [cid.strip() for cid in self.pluggy_client_id.split(",") if cid.strip()]
+
+    @property
+    def pluggy_client_secrets(self) -> list[str]:
+        """Return list of configured Pluggy client secrets."""
+        if not self.pluggy_client_secret:
+            return []
+        secret_val = self.pluggy_client_secret.get_secret_value()
+        if not secret_val:
+            return []
+        return [s.strip() for s in secret_val.split(",") if s.strip()]
+
+    @property
+    def pluggy_client_count(self) -> int:
+        """Return number of configured Pluggy client pairs."""
+        ids = self.pluggy_client_ids
+        secrets = self.pluggy_client_secrets
+        if len(ids) != len(secrets):
+            raise ValueError(
+                f"PLUGGY_CLIENT_ID has {len(ids)} values but PLUGGY_CLIENT_SECRET has {len(secrets)}. "
+                "They must have the same number of comma-separated values."
+            )
+        return len(ids)
+
+    def get_pluggy_client(self, index: int = 0) -> tuple[str, str] | None:
+        """Get client_id and secret for a specific index (default 0). Returns None if not configured."""
+        if self.pluggy_client_count == 0:
+            return None
+        if index < 0 or index >= self.pluggy_client_count:
+            raise IndexError(f"Pluggy client index {index} out of range (0-{self.pluggy_client_count - 1})")
+        return self.pluggy_client_ids[index], self.pluggy_client_secrets[index]
 
     # Enable Banking (European PSD2 banks)
     enable_banking_app_id: str = ""

@@ -14,6 +14,13 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface BankConnectDialogProps {
   open: boolean
@@ -22,6 +29,9 @@ interface BankConnectDialogProps {
   updateItemId?: string
   provider?: string
   supportsAssetSync?: boolean
+  availableClients?: { client_id: string; label: string }[]
+  selectedClientId?: string
+  onClientSelect?: (clientId: string) => void
 }
 
 export function BankConnectDialog({
@@ -31,6 +41,9 @@ export function BankConnectDialog({
   updateItemId,
   provider = 'pluggy',
   supportsAssetSync = false,
+  availableClients = [],
+  selectedClientId,
+  onClientSelect,
 }: BankConnectDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -38,7 +51,9 @@ export function BankConnectDialog({
   const [syncAssets, setSyncAssets] = useState(true)
   const [optionsConfirmed, setOptionsConfirmed] = useState(false)
   // Only prompt for asset-sync when the provider actually imports holdings.
-  const needsInitialOptions = !reconnectConnectionId && supportsAssetSync
+  // Also prompt for client selection when multiple clients are available.
+  const showClientSelector = !reconnectConnectionId && availableClients.length > 1
+  const needsInitialOptions = !reconnectConnectionId && (supportsAssetSync || showClientSelector)
 
   useEffect(() => {
     if (!open) {
@@ -55,7 +70,7 @@ export function BankConnectDialog({
       try {
         const token = reconnectConnectionId
           ? await connections.getReconnectToken(reconnectConnectionId)
-          : await connections.getConnectToken(provider)
+          : await connections.getConnectToken(provider, selectedClientId)
         if (!cancelled) setConnectToken(token)
       } catch {
         if (!cancelled) {
@@ -104,22 +119,51 @@ export function BankConnectDialog({
             <DialogTitle>{t('connections.initialSyncSettings')}</DialogTitle>
             <p className="text-sm text-muted-foreground">{t('connections.initialSyncSettingsDesc')}</p>
           </DialogHeader>
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
-            <div className="space-y-1">
-              <Label htmlFor="initial-sync-assets">{t('connections.syncAssets')}</Label>
-              <p className="text-xs text-muted-foreground">{t('connections.syncAssetsHint')}</p>
-            </div>
-            <input
-              id="initial-sync-assets"
-              type="checkbox"
-              checked={syncAssets}
-              onChange={(e) => setSyncAssets(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-            />
+          <div className="space-y-3">
+            {showClientSelector && (
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+                <Label>{t('connections.selectClient', 'Select Pluggy Client')}</Label>
+                <Select
+                  value={selectedClientId || ''}
+                  onValueChange={(v) => onClientSelect?.(v)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder={t('connections.selectClientPlaceholder', 'Choose a client...')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableClients.map((c) => (
+                      <SelectItem key={c.client_id} value={c.client_id}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {supportsAssetSync && (
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="initial-sync-assets">{t('connections.syncAssets')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('connections.syncAssetsHint')}</p>
+                </div>
+                <input
+                  id="initial-sync-assets"
+                  type="checkbox"
+                  checked={syncAssets}
+                  onChange={(e) => setSyncAssets(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleClose}>{t('common.cancel')}</Button>
-            <Button onClick={() => setOptionsConfirmed(true)}>{t('connections.continueToConnector')}</Button>
+            <Button
+              onClick={() => setOptionsConfirmed(true)}
+              disabled={showClientSelector && !selectedClientId}
+            >
+              {t('connections.continueToConnector')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

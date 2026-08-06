@@ -236,6 +236,10 @@ class BankProvider(ABC):
     to enable bank account syncing via OAuth or widget flow.
     """
 
+    def __init__(self, client_id: str | None = None, client_secret: str | None = None) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+
     @property
     @abstractmethod
     def name(self) -> str:

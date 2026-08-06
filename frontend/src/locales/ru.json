@@ -677,7 +677,9 @@
     "syncAssetsHint": "Если выключено, это подключение синхронизирует счета и транзакции, но не изменяет инвестиционные активы провайдера.",
     "initialSyncSettings": "Параметры синхронизации",
     "initialSyncSettingsDesc": "Выберите, что Securo должен импортировать перед открытием коннектора.",
-    "continueToConnector": "Перейти к коннектору"
+    "continueToConnector": "Перейти к коннектору",
+    "selectClient": "Выберите клиент Pluggy",
+    "selectClientPlaceholder": "Выберите клиента..."
   },
   "settings": {
     "rules": "Правила",

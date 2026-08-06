@@ -713,7 +713,9 @@
     "syncAssetsHint": "Gdy wyłączone, to połączenie synchronizuje konta i transakcje, ale nie zmienia inwestycji dostawcy.",
     "initialSyncSettings": "Opcje synchronizacji",
     "initialSyncSettingsDesc": "Wybierz, co Securo ma zaimportować przed otwarciem konektora.",
-    "continueToConnector": "Przejdź do konektora"
+    "continueToConnector": "Przejdź do konektora",
+    "selectClient": "Wybierz klienta Pluggy",
+    "selectClientPlaceholder": "Wybierz klienta..."
   },
   "settings": {
     "rules": "Reguły",

@@ -246,6 +246,9 @@ class PluggyProvider(BankProvider):
     _api_key: Optional[str] = None
     _api_key_expires_at: float = 0
 
+    def __init__(self, client_id: str | None = None, client_secret: str | None = None) -> None:
+        super().__init__(client_id=client_id, client_secret=client_secret)
+
     @property
     def name(self) -> str:
         return "pluggy"
@@ -254,28 +257,43 @@ class PluggyProvider(BankProvider):
     def flow_type(self) -> str:
         return "widget"
 
+    # Module-level cache for API keys, keyed by client_id (None = default).
+    # Separate from class variables so custom clients don't evict the default.
+    _api_key_cache: dict[Optional[str], tuple[str, float]] = {}
+
+    def _resolve_credentials(self) -> tuple[str, str]:
+        """Resolve client_id and client_secret, preferring instance vars over global settings."""
+        settings = get_settings()
+        if self._client_id and self._client_secret:
+            return self._client_id, self._client_secret
+        # Fallback to raw env values (matches original single-client behavior)
+        return settings.pluggy_client_id, settings.pluggy_client_secret.get_secret_value()
+
     async def _ensure_api_key(self) -> str:
         """Get a valid API key, refreshing if expired or about to expire (<5min remaining)."""
+        client_id, client_secret = self._resolve_credentials()
         now = time.time()
-        if self._api_key and (self._api_key_expires_at - now) > 300:
-            return self._api_key
+        cache_key = self._client_id or None
 
-        settings = get_settings()
+        # Return cached key if still valid (>5min remaining)
+        cached = PluggyProvider._api_key_cache.get(cache_key)
+        if cached and (cached[1] - now) > 300:
+            return cached[0]
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{PLUGGY_API_BASE}/auth",
                 json={
-                    "clientId": settings.pluggy_client_id,
-                    "clientSecret": settings.pluggy_client_secret.get_secret_value(),
+                    "clientId": client_id,
+                    "clientSecret": client_secret,
                 },
             )
             resp.raise_for_status()
             data = resp.json()
 
-        PluggyProvider._api_key = data["apiKey"]
-        # Pluggy API keys last 2 hours
-        PluggyProvider._api_key_expires_at = now + 7200
-        return PluggyProvider._api_key
+        api_key = data["apiKey"]
+        PluggyProvider._api_key_cache[cache_key] = (api_key, now + 7200)
+        return api_key
 
     async def _headers(self) -> dict:
         api_key = await self._ensure_api_key()

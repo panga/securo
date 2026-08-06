@@ -115,7 +115,8 @@ async def _sync_holdings(
     # Storage errors below are intentionally not caught — they indicate
     # a schema/invariant bug we want to surface, not a hiccup to swallow.
     try:
-        provider = get_provider(connection.provider)
+        conn_client_id = (connection.settings or {}).get("provider_client_id")
+        provider = get_provider(connection.provider, client_id=conn_client_id)
         holdings = await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -463,9 +464,10 @@ async def list_provider_institutions(
 
 
 async def create_connect_token(
-    provider_name: str, user_id: uuid.UUID, item_id: str | None = None
+    provider_name: str, user_id: uuid.UUID, item_id: str | None = None,
+    client_id: str | None = None,
 ) -> dict:
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, client_id=client_id)
     token_data = await provider.create_connect_token(str(user_id), item_id=item_id)
     return {"access_token": token_data.access_token}
 
@@ -505,6 +507,7 @@ async def handle_oauth_callback(
     state: Optional[str] = None,
     sync_assets: Optional[bool] = None,
     reconnect_connection_id: Optional[uuid.UUID] = None,
+    client_id: Optional[str] = None,
 ) -> BankConnection:
     state_payload: dict = {}
     if state:
@@ -518,6 +521,7 @@ async def handle_oauth_callback(
             raise ValueError("OAuth state workspace does not match active workspace")
         state_payload = consumed
         provider_name = consumed.get("provider") or provider_name
+        client_id = consumed.get("client_id") or client_id
     reconnect_id = state_payload.get("reconnect_connection_id") or reconnect_connection_id
     existing_reconnect: BankConnection | None = None
     if reconnect_id:
@@ -530,11 +534,13 @@ async def handle_oauth_callback(
         if provider_name and provider_name != existing_reconnect.provider:
             raise ValueError("Reconnect provider does not match target connection")
         provider_name = existing_reconnect.provider
+        # Reconnects use the stored client_id from the existing connection
+        client_id = (existing_reconnect.settings or {}).get("provider_client_id") or client_id
 
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, client_id=client_id)
     connection_data = await provider.handle_oauth_callback(code)
 
     if existing_reconnect:
@@ -558,6 +564,9 @@ async def handle_oauth_callback(
         sync_assets = flow_sync_assets
     if sync_assets is not None:
         initial_settings["sync_assets"] = sync_assets
+    # Store the provider client_id used for this connection (for multi-client setups)
+    if client_id:
+        initial_settings["provider_client_id"] = client_id
 
     connection = BankConnection(
         workspace_id=workspace_id,
@@ -1147,7 +1156,9 @@ async def sync_connection(
     use_provider_cats = await admin_service.use_provider_categories(session)
 
     try:
-        provider = get_provider(connection.provider)
+        # Use the connection-specific client_id if stored (multi-client setups)
+        conn_client_id = conn_settings.get("provider_client_id")
+        provider = get_provider(connection.provider, client_id=conn_client_id)
 
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)

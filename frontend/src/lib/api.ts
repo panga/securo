@@ -299,8 +299,10 @@ export const connections = {
     const { data } = await api.get('/connections/providers')
     return data.providers
   },
-  getConnectToken: async (provider = 'pluggy'): Promise<string> => {
-    const { data } = await api.post('/connections/connect-token', { provider })
+  getConnectToken: async (provider = 'pluggy', clientId?: string): Promise<string> => {
+    const payload: Record<string, string> = { provider }
+    if (clientId) payload.client_id = clientId
+    const { data } = await api.post('/connections/connect-token', payload)
     return data.access_token
   },
   getOAuthUrl: async (provider: string, flow_params?: Record<string, unknown>): Promise<string> => {
@@ -334,12 +336,14 @@ export const connections = {
     state?: string,
     settings?: Pick<ConnectionSettings, 'sync_assets'>,
     reconnectConnectionId?: string,
+    clientId?: string,
   ): Promise<BankConnection> => {
     const { data } = await api.post('/connections/oauth/callback', {
       code,
       provider,
       state,
       reconnect_connection_id: reconnectConnectionId,
+      client_id: clientId,
       ...settings,
     })
     return data
@@ -355,6 +359,14 @@ export const connections = {
   getReconnectToken: async (connectionId: string): Promise<string> => {
     const { data } = await api.post(`/connections/${connectionId}/reconnect-token`)
     return data.access_token
+  },
+  getAvailableClients: async (): Promise<{ client_id: string; label: string }[]> => {
+    try {
+      const { data } = await api.get('/connections/available-clients')
+      return data.clients
+    } catch {
+      return []
+    }
   },
   updateSettings: async (
     id: string,

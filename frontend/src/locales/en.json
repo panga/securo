@@ -677,7 +677,9 @@
     "syncAssetsHint": "When disabled, this connection syncs accounts and transactions but leaves provider investment holdings untouched.",
     "initialSyncSettings": "Sync options",
     "initialSyncSettingsDesc": "Choose what Securo should import before opening the connector.",
-    "continueToConnector": "Continue to connector"
+    "continueToConnector": "Continue to connector",
+    "selectClient": "Select Pluggy Client",
+    "selectClientPlaceholder": "Choose a client..."
   },
   "settings": {
     "rules": "Rules",

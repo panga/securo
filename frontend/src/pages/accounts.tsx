@@ -82,6 +82,7 @@ export default function AccountsPage() {
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  const [selectedClientId, setSelectedClientId] = useState<string | undefined>(undefined)
 
   const { data: accountsList, isLoading: accountsLoading } = useQuery({
     queryKey: ['accounts'],
@@ -584,9 +585,12 @@ export default function AccountsPage() {
       {/* Bank Connect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog
         open={!!selectedProvider && selectedProvider.flow_type === 'widget'}
-        onClose={() => setSelectedProvider(null)}
+        onClose={() => { setSelectedProvider(null); setSelectedClientId(undefined) }}
         provider={selectedProvider?.name}
         supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
+        availableClients={(selectedProvider as Provider & { available_clients?: { client_id: string; label: string }[] })?.available_clients}
+        selectedClientId={selectedClientId}
+        onClientSelect={setSelectedClientId}
       />
 
       {/* OAuth Connect Dialog — institution-pickers (Enable Banking) */}

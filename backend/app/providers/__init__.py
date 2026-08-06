@@ -49,29 +49,73 @@ def register_provider(name: str, cls: type[BankProvider]) -> None:
     _PROVIDERS[name] = cls
 
 
-def get_provider(name: str) -> BankProvider:
-    """Get an instance of a registered bank provider by name."""
+def _resolve_pluggy_client(client_id: str | None) -> tuple[str | None, str | None]:
+    """Resolve Pluggy client_id and secret from config when only client_id is provided.
+
+    When a client_id is passed but no secret, we look up the matching secret
+    from the comma-separated config by index. Returns (client_id, client_secret)
+    or (None, None) when no client_id is given.
+    Raises ValueError if client_id is provided but not found in config.
+    """
+    if not client_id:
+        return None, None
+    from app.core.config import get_settings
+    settings = get_settings()
+    ids = settings.pluggy_client_ids
+    secrets = settings.pluggy_client_secrets
+    try:
+        idx = ids.index(client_id)
+    except ValueError:
+        raise ValueError(
+            f"Pluggy client_id '{client_id}' is not configured. "
+            f"Available: {ids}"
+        )
+    if idx < len(secrets):
+        return client_id, secrets[idx]
+    return client_id, None
+
+
+def get_provider(name: str, client_id: str | None = None, client_secret: str | None = None) -> BankProvider:
+    """Get an instance of a registered bank provider by name.
+
+    For Pluggy, optional client_id/client_secret can override the global config.
+    When only client_id is provided, the matching secret is resolved from config.
+    """
     provider_class = _PROVIDERS.get(name)
     if not provider_class:
         available = ", ".join(_PROVIDERS.keys()) or "(none)"
         raise ValueError(f"Unknown provider: {name}. Available: {available}")
-    return provider_class()
+    # For Pluggy: resolve secret from config if only client_id is provided
+    if name == "pluggy" and client_id and not client_secret:
+        client_id, client_secret = _resolve_pluggy_client(client_id)
+    return provider_class(client_id=client_id, client_secret=client_secret)
 
 
 def list_providers() -> list[dict[str, str]]:
     """Return info about all registered providers."""
     return [
-        {"name": name, "flow_type": cls().flow_type}
+        {"name": name, "flow_type": cls(client_id=None, client_secret=None).flow_type}
         for name, cls in _PROVIDERS.items()
     ]
 
 
 def all_known_providers() -> list[dict]:
     """Return all known providers with a configured flag."""
-    return [
-        {**p, "configured": p["name"] in _PROVIDERS}
-        for p in KNOWN_PROVIDERS
-    ]
+    from app.core.config import get_settings
+    settings = get_settings()
+    result = []
+    for p in KNOWN_PROVIDERS:
+        entry = {**p, "configured": p["name"] in _PROVIDERS}
+        # Expose available Pluggy clients when >1 is configured
+        if p["name"] == "pluggy":
+            client_ids = settings.pluggy_client_ids
+            if len(client_ids) > 1:
+                entry["available_clients"] = [
+                    {"client_id": cid, "label": f"••••{cid[-4:]}"}
+                    for cid in client_ids
+                ]
+        result.append(entry)
+    return result
 
 
 def _auto_register_providers() -> None:

@@ -39,6 +39,7 @@ class OAuthCallbackRequest(BaseModel):
     provider: Optional[str] = None
     sync_assets: Optional[bool] = None
     reconnect_connection_id: Optional[uuid.UUID] = None
+    client_id: Optional[str] = None
 
 
 class ReauthUrlResponse(BaseModel):
@@ -63,6 +64,7 @@ class InstitutionListResponse(BaseModel):
 
 class ConnectTokenRequest(BaseModel):
     provider: str = "pluggy"
+    client_id: Optional[str] = None
 
 
 class ConnectTokenResponse(BaseModel):

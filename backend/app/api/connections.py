@@ -42,7 +42,9 @@ async def create_connect_token(
 ):
     """Create a connect token for widget-based bank connection flows."""
     try:
-        token_data = await connection_service.create_connect_token(data.provider, ctx.user_id)
+        token_data = await connection_service.create_connect_token(
+            data.provider, ctx.user_id, client_id=data.client_id
+        )
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -73,6 +75,20 @@ async def get_oauth_url(
         return OAuthUrlResponse(url=url)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/available-clients")
+async def get_available_clients():
+    """Return available Pluggy client configurations (when >1 is configured)."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    client_ids = settings.pluggy_client_ids
+    return {
+        "clients": [
+            {"client_id": cid, "label": f"\u2022\u2022\u2022\u2022{cid[-4:]}"}
+            for cid in client_ids
+        ]
+    }
 
 
 @router.get("/{provider}/institutions", response_model=InstitutionListResponse)
@@ -108,6 +124,7 @@ async def oauth_callback(
             state=data.state,
             sync_assets=data.sync_assets,
             reconnect_connection_id=data.reconnect_connection_id,
+            client_id=data.client_id,
         )
         return connection
     except ProviderUserActionRequired as e:

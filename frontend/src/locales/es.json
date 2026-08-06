@@ -677,7 +677,9 @@
     "syncAssetsHint": "Cuando está desactivado, esta conexión sincroniza cuentas y transacciones, pero deja intactas las inversiones del proveedor.",
     "initialSyncSettings": "Opciones de sincronización",
     "initialSyncSettingsDesc": "Elige qué debe importar Securo antes de abrir el conector.",
-    "continueToConnector": "Continuar al conector"
+    "continueToConnector": "Continuar al conector",
+    "selectClient": "Seleccionar cliente Pluggy",
+    "selectClientPlaceholder": "Elegir un cliente..."
   },
   "settings": {
     "rules": "Reglas",

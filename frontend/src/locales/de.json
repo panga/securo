@@ -677,7 +677,9 @@
     "syncAssetsHint": "Wenn deaktiviert, synchronisiert diese Verbindung Konten und Transaktionen, lässt aber Investment-Bestände des Anbieters unverändert.",
     "initialSyncSettings": "Synchronisierungsoptionen",
     "initialSyncSettingsDesc": "Wähle aus, was Securo importieren soll, bevor der Connector geöffnet wird.",
-    "continueToConnector": "Weiter zum Connector"
+    "continueToConnector": "Weiter zum Connector",
+    "selectClient": "Pluggy-Client auswählen",
+    "selectClientPlaceholder": "Client auswählen..."
   },
   "settings": {
     "rules": "Regeln",
