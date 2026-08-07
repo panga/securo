@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
@@ -91,14 +91,19 @@ export default function WorkspaceSettingsPage() {
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
-  useEffect(() => {
-    if (!current) return
+  // Keep the edit form in sync with the active workspace. `current` is
+  // memoized on the workspace list + id, so this only re-syncs when the
+  // active workspace actually changes. Adjusting state during render is
+  // the React-recommended way to sync state from props/context.
+  const [syncedWorkspace, setSyncedWorkspace] = useState(current)
+  if (current && syncedWorkspace !== current) {
+    setSyncedWorkspace(current)
     setEditName(current.name)
     setEditCurrency(current.default_currency)
     setEditLocale(current.locale ?? '')
     setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
     setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
-  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.icon, current?.color])
+  }
 
   const membersQuery = useQuery({
     queryKey: ['workspace-members', current?.id],
