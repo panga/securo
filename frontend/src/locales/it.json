@@ -327,6 +327,7 @@
     "recurringUnlinkSuccess": "Transazione scollegata dalla spesa ricorrente",
     "transfer": "Trasferimento",
     "pending": "In sospeso",
+    "projected": "Previsto",
     "recurringInfo": "Transazione ricorrente ({{frequency}}). Prossima: {{next}}",
     "from": "Da",
     "to": "A",

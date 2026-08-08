@@ -333,6 +333,7 @@
     "recurringUnlinkSuccess": "Transakcja odłączona od cyklicznego rachunku",
     "transfer": "Transfer",
     "pending": "Oczekująca",
+    "projected": "Planowane",
     "recurringInfo": "Transakcja cykliczna ({{frequency}}). Następna: {{next}}",
     "from": "Z",
     "to": "Do",

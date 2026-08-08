@@ -327,6 +327,7 @@
     "recurringUnlinkSuccess": "Transaktion von der wiederkehrenden Rechnung getrennt",
     "transfer": "Umbuchung",
     "pending": "Ausstehend",
+    "projected": "Geplant",
     "recurringInfo": "Wiederkehrende Transaktion ({{frequency}}). Nächste: {{next}}",
     "from": "Von",
     "to": "Nach",

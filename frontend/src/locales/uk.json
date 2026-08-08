@@ -327,6 +327,7 @@
     "recurringUnlinkSuccess": "Транзакцію відв'язано від регулярного платежу",
     "transfer": "Переказ",
     "pending": "Очікування",
+    "projected": "Заплановано",
     "recurringInfo": "Регулярна транзакція ({{frequency}}). Наступна: {{next}}",
     "from": "Звідки",
     "to": "Куди",

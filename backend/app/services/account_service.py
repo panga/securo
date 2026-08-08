@@ -1011,7 +1011,7 @@ async def get_account_balance_history(
     # Non-CC manual accounts: exclude pending so the chart's end point matches
     # the posted-only "Saldo atual" card. Connected accounts keep their
     # provider-view behavior; credit cards keep pending (unchanged).
-    include_pending = account.connection_id or account.type == "credit_card"
+    include_pending = bool(account.connection_id or account.type == "credit_card")
     series = await _account_daily_balance_series(
         session, account_id, date_from, date_to, account.currency,
         include_pending=include_pending,

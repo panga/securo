@@ -327,6 +327,7 @@
     "recurringUnlinkSuccess": "Transação desvinculada da conta recorrente",
     "transfer": "Transferência",
     "pending": "Pendente",
+    "projected": "Previsto",
     "recurringInfo": "Transação recorrente ({{frequency}}). Próxima: {{next}}",
     "from": "De",
     "to": "Até",
