@@ -560,7 +560,6 @@ async def test_balance_date_parameter_overrides_default_cutoff(client, auth_head
 async def test_projected_transactions_account_id_and_range(client, auth_headers, test_account, test_categories):
     """projected-transactions filters by account_id and an inclusive from/to range."""
     next_month = _next_month_str()
-    next_month_date = date.fromisoformat(next_month)
 
     # Second account via API so we can prove the account_id filter.
     resp = await client.post(

@@ -766,7 +766,7 @@ export default function AccountDetailPage() {
       cur.setDate(cur.getDate() + 1)
     }
     return series
-  }, [isCreditCard, txData, projectedRows, filterFrom, filterTo, locale, dateLocale, usePrimary, summary, openingBalance])
+  }, [isCreditCard, txData, projectedRows, filterFrom, filterTo, dateLocale, usePrimary, summary, openingBalance, activeBill])
 
   // Credit-card cycle running total: debits add, refund credits subtract (net
   // matches the bank's bill total). Excludes opening_balance and any
@@ -817,7 +817,7 @@ export default function AccountDetailPage() {
       return { ...tx, runningBalance: balance }
     })
     return withBalance.reverse()
-  }, [txData, projectedRows, isCreditCard, summary, usePrimary, openingBalance])
+  }, [txData, projectedRows, isCreditCard, summary, usePrimary, openingBalance, ccRunningTotal])
 
   // Balance widget values for non-CC accounts.
   // Saldo atual = current_balance (provider for connected, posted-only for manual).
