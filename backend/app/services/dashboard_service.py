@@ -25,6 +25,7 @@ from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import convert
+from app.services.account_service import net_pending_by_account
 from app.models.user import User
 
 
@@ -139,7 +140,9 @@ async def get_summary(
         # Current or future month: today
         cutoff = today
 
-    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
+    total_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, include_pending=False
+    )
 
     # For current/future months, project the total balance by adding recurring
     # projections from cutoff+1 through month_end.
@@ -731,25 +734,36 @@ async def get_projected_transactions(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     month: Optional[date] = None,
+    *,
+    account_id: Optional[uuid.UUID] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> list[ProjectedTransaction]:
     """Return virtual recurring transaction projections for a month,
-    enriched with description and category info for display."""
-    if not month:
-        month = date.today().replace(day=1)
+    enriched with description and category info for display.
 
-    month_start, month_end = _month_range(month)
+    When ``from_date``/``to_date`` are both given, the range is
+    [from_date, to_date] (inclusive) instead of the month. When ``account_id``
+    is given, only recurring rules on that account are projected.
+    """
+    if from_date and to_date:
+        range_start, range_end = from_date, to_date + timedelta(days=1)
+    else:
+        if not month:
+            month = date.today().replace(day=1)
+        range_start, range_end = _month_range(month)
 
     # Get user's primary currency for live conversion
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
-    result = await session.execute(
+    stmt = (
         select(RecurringTransaction)
         .outerjoin(Category, RecurringTransaction.category_id == Category.id)
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
+            RecurringTransaction.start_date < range_end,
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.treat_as_transfer.is_not(True),
@@ -760,6 +774,9 @@ async def get_projected_transactions(
             ),
         )
     )
+    if account_id is not None:
+        stmt = stmt.where(RecurringTransaction.account_id == account_id)
+    result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
 
     # Pre-fetch categories for all recurring templates that have one
@@ -779,8 +796,8 @@ async def get_projected_transactions(
             start=rec.next_occurrence,
             frequency=rec.frequency,
             end_date=rec.end_date,
-            range_start=month_start,
-            range_end=month_end,
+            range_start=range_start,
+            range_end=range_end,
             intended_day=rec.day_of_month or rec.start_date.day,
         )
         cat_name, cat_icon, cat_color = cat_map.get(rec.category_id, (None, None, None)) if rec.category_id else (None, None, None)
@@ -796,6 +813,7 @@ async def get_projected_transactions(
         for occ_date in occurrences:
             projections.append(ProjectedTransaction(
                 recurring_id=str(rec.id),
+                account_id=str(rec.account_id) if rec.account_id else None,
                 description=rec.description,
                 amount=float(rec.amount),
                 amount_primary=amt_primary,
@@ -872,14 +890,25 @@ async def _get_open_accounts(
 
 
 async def _account_balance_at(
-    session: AsyncSession, account: Account, cutoff: date
+    session: AsyncSession, account: Account, cutoff: date,
+    *,
+    include_pending: bool = True,
+    net_pending: Optional[float] = None,
 ) -> float:
     """Get balance for a single account at a specific date.
 
     For bank-connected accounts, backtrack from the provider's current balance
     by subtracting transaction deltas that occurred after the cutoff.
     For manual accounts, sum transactions up to the cutoff date.
+
+    ``include_pending=False`` drops pending entries (any source — manual,
+    recurring, bank-sync) for non-CC accounts; credit cards keep pending
+    (unchanged behavior). Connected accounts start from the provider balance,
+    which still includes pending, so the account's net pending is subtracted
+    and only posted deltas are backtracked.
     """
+    # Pending stays for credit cards regardless of include_pending.
+    status_filter = [] if (include_pending or account.type == "credit_card") else [Transaction.status == "posted"]
     if account.connection_id:
         # Start from the provider's authoritative current balance
         current_bal = float(account.balance)
@@ -893,9 +922,13 @@ async def _account_balance_at(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
                 Transaction.is_ignored == False,
+                *status_filter,
             )
         )
-        return current_bal - float(delta_after or 0)
+        bal = current_bal - float(delta_after or 0)
+        if not include_pending and account.type != "credit_card":
+            bal -= float(net_pending or 0)
+        return bal
     else:
         # Manual: sum signed transactions up to cutoff
         # Exclude ignored transactions from balance calculation
@@ -905,6 +938,7 @@ async def _account_balance_at(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
                 Transaction.is_ignored == False,
+                *status_filter,
             )
         )
         return float(result or 0)
@@ -913,12 +947,23 @@ async def _account_balance_at(
 async def _total_balance_by_currency(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
+    *,
+    include_pending: bool = True,
 ) -> dict[str, float]:
     """Get total balance across all open accounts at a date, grouped by currency."""
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    net_pending = None
+    if not include_pending:
+        net_pending = await net_pending_by_account(session, workspace_id, account_ids)
     totals: dict[str, float] = {}
     for account in accounts:
-        bal = await _account_balance_at(session, account, cutoff)
+        bal = await _account_balance_at(
+            session,
+            account,
+            cutoff,
+            include_pending=include_pending,
+            net_pending=net_pending.get(account.id, 0.0) if net_pending is not None else None,
+        )
         totals[account.currency] = totals.get(account.currency, 0) + bal
     return totals
 
@@ -927,13 +972,16 @@ async def _balance_at(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     *, primary_currency_hint: Optional[str] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    include_pending: bool = True,
 ) -> float:
     """Get total balance across all open accounts at a specific date, converted to primary currency.
 
     `primary_currency_hint` lets callers avoid an extra User lookup when they
     already know the workspace's primary currency.
     """
-    totals = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
+    totals = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, include_pending=include_pending
+    )
     if not totals:
         return 0.0
 
@@ -957,6 +1005,7 @@ async def _daily_balance_deltas_by_date(
     *,
     primary_currency_hint: Optional[str] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    include_pending: bool = True,
 ) -> dict[date, float]:
     """Get daily balance deltas for a date range [start, end), keyed by date.
 
@@ -964,6 +1013,9 @@ async def _daily_balance_deltas_by_date(
     foreign txs within an account), grouped by date and account currency,
     then converts each currency to primary. This is consistent with
     ``_balance_at`` and avoids per-transaction FX conversion loops.
+
+    ``include_pending=False`` drops pending entries (any source) for non-CC
+    accounts; credit cards keep pending (unchanged behavior).
     """
     effective = case(
         (Transaction.currency == Account.currency, Transaction.amount),
@@ -973,6 +1025,7 @@ async def _daily_balance_deltas_by_date(
         (Transaction.type == "credit", effective),
         else_=-effective,
     )
+    status_filter = [] if include_pending else [or_(Account.type == "credit_card", Transaction.status == "posted")]
     result = await session.execute(
         select(
             Transaction.date,
@@ -991,6 +1044,7 @@ async def _daily_balance_deltas_by_date(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
             ),
+            *status_filter,
             *( [Transaction.account_id.in_(account_ids)] if account_ids is not None else [] ),
         )
         .group_by(Transaction.date, Account.currency)
@@ -1015,6 +1069,7 @@ async def _daily_deltas(
     *,
     primary_currency_hint: Optional[str] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    include_pending: bool = True,
 ) -> dict[int, float]:
     """Get daily balance deltas for a date range [start, end), keyed by day-of-month."""
     by_date = await _daily_balance_deltas_by_date(
@@ -1024,6 +1079,7 @@ async def _daily_deltas(
         end,
         primary_currency_hint=primary_currency_hint,
         account_ids=account_ids,
+        include_pending=include_pending,
     )
     return {tx_date.day: amount for tx_date, amount in by_date.items()}
 
@@ -1058,20 +1114,24 @@ async def get_balance_history(
     current_start = await _balance_at(
         session, workspace_id, month_start - timedelta(days=1),
         primary_currency_hint=primary_currency, account_ids=account_ids,
+        include_pending=False,
     )
     prev_start = await _balance_at(
         session, workspace_id, prev_month_start - timedelta(days=1),
         primary_currency_hint=primary_currency, account_ids=account_ids,
+        include_pending=False,
     )
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
         session, workspace_id, month_start, month_end,
         primary_currency_hint=primary_currency, account_ids=account_ids,
+        include_pending=False,
     )
     prev_deltas = await _daily_deltas(
         session, workspace_id, prev_month_start, prev_month_end,
         primary_currency_hint=primary_currency, account_ids=account_ids,
+        include_pending=False,
     )
 
     # Recurring projections for future days of current month (converted to primary currency)

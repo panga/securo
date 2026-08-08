@@ -588,6 +588,7 @@
     "confirmDisconnectDesc": "Это отвяжет {{institution}} и удалит синхронизированные счета и транзакции из приложения. Это действие необратимо.",
     "viewTransactions": "Просмотр транзакций",
     "currentBalance": "Текущий баланс",
+    "projectedBalance": "Прогнозируемый баланс",
     "income": "Доход",
     "expenses": "Расходы",
     "thisMonth": "Этот месяц",

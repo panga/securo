@@ -8,6 +8,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
+import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
   title: string
@@ -35,10 +36,6 @@ type DisplayItem = {
   isProjected: boolean
   attachmentCount: number
   transaction: Transaction | null
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 export function TransactionDrillDown({
@@ -80,7 +77,7 @@ export function TransactionDrillDown({
 
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
     enabled: !!filter && !!monthParam,
   })
 

@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -67,9 +67,24 @@ async def get_balance_history(
 @router.get("/projected-transactions", response_model=list[ProjectedTransaction])
 async def get_projected_transactions(
     month: Optional[date] = Query(None),
+    account_id: Optional[uuid.UUID] = Query(None),
+    from_date: Optional[date] = Query(None, alias="from"),
+    to_date: Optional[date] = Query(None, alias="to"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # from/to must come as a pair; a lone bound is ambiguous with `month`.
+    if (from_date is None) != (to_date is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'from' and 'to' must be provided together",
+        )
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'from' must not be after 'to'",
+        )
     return await dashboard_service.get_projected_transactions(
-        session, ctx.workspace.id, ctx.user_id, month
+        session, ctx.workspace.id, ctx.user_id, month,
+        account_id=account_id, from_date=from_date, to_date=to_date,
     )

@@ -10,13 +10,10 @@ import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity } from '@/lib/calendar-activity'
 import { weekdayShortLabels } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/format'
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T00:00:00`)
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 function compactCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -1248,7 +1245,9 @@ function CalendarItemRow({
             <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
           )}
           {item.status === 'pending' && (
-            <Clock size={12} className="text-muted-foreground shrink-0" />
+            <span title={t('transactions.pending')} className="shrink-0 inline-flex">
+              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+            </span>
           )}
         </div>
         {(account || item.account_name) && (

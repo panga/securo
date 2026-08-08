@@ -588,6 +588,7 @@
     "confirmDisconnectDesc": "Cela dissociera {{institution}} et supprimera de l'application les comptes et transactions synchronisés. Cette action est irréversible.",
     "viewTransactions": "Voir les transactions",
     "currentBalance": "Solde actuel",
+    "projectedBalance": "Solde projeté",
     "income": "Revenus",
     "expenses": "Dépenses",
     "thisMonth": "Ce mois-ci",

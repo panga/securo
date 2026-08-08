@@ -2,12 +2,17 @@ import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, Clock, EyeClosed, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
+import { formatCurrency } from '@/lib/format'
 
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
+/** Heuristic: detect descriptions that are long strings without spaces
+ * (e.g. bank reference IDs like "MERCADOLIVRE*PRODUTOSINF...").
+ * These should be truncated rather than wrapping, since they have no
+ * word break opportunities and would break the layout. */
+function hasWordBreaks(text: string): boolean {
+  return /\s/.test(text)
 }
 
 interface MobileTransactionRowProps {
@@ -23,6 +28,8 @@ interface MobileTransactionRowProps {
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
+  /** Show payee instead of account info (for per-account views) */
+  showPayee?: boolean
 }
 
 export function MobileTransactionRow({
@@ -38,6 +45,7 @@ export function MobileTransactionRow({
   userCurrency,
   onSelect,
   onClick,
+  showPayee = false,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
@@ -52,15 +60,22 @@ export function MobileTransactionRow({
       ? 'text-emerald-600'
       : 'text-rose-500'
 
+  // Virtual rows (non-materialized recurring projections) are informational:
+  // never clickable, never selectable, and rendered with a projected badge.
+  const virtual = tx.virtual === true
+
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
       className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
       } ${highlighted ? 'securo-highlight-flash' : ''} ${
-        tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer active:bg-muted/60'
+        virtual ? 'opacity-80' : ''
+      } ${
+        virtual || tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer active:bg-muted/60'
       }`}
       onClick={() => {
+        if (virtual) return
         if (tx.is_shared) return
         if (!canWrite) return
         onClick(tx)
@@ -91,7 +106,7 @@ export function MobileTransactionRow({
       <div className="min-w-0 flex-1">
         {/* Description row */}
         <div className="flex items-center gap-1.5">
-          <p className="text-sm font-semibold text-foreground truncate leading-tight">
+          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(tx.description) ? 'break-words whitespace-normal' : 'truncate'}`}>
             {tx.description}
           </p>
           {tx.group_id && (
@@ -102,10 +117,13 @@ export function MobileTransactionRow({
           {!!tx.transfer_pair_id && (
             <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
           )}
+          {virtual && (
+            <CalendarClock className="h-3 w-3 text-primary shrink-0" />
+          )}
           {tx.is_ignored && (
             <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
           )}
-          {tx.recurring_transaction_id != null && (
+          {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
               R
             </span>
@@ -116,21 +134,31 @@ export function MobileTransactionRow({
             </span>
           )}
           {tx.status === 'pending' && (
-            <Clock size={12} className="text-muted-foreground shrink-0" />
+            <span title={t('transactions.pending')} className="shrink-0 inline-flex">
+              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+            </span>
           )}
           {(tx.attachment_count ?? 0) > 0 && (
             <Paperclip size={11} className="text-muted-foreground shrink-0" />
           )}
         </div>
 
-        {/* Account row */}
-        {account && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <AccountIcon account={account} size="xs" />
-            <span className="text-xs text-muted-foreground truncate">
-              {getAccountName(account)}
-            </span>
-          </div>
+        {/* Account row or Payee row */}
+        {showPayee ? (
+          (tx.payee_name || tx.payee) && (tx.payee_name || tx.payee) !== tx.description ? (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {tx.payee_name || tx.payee}
+            </p>
+          ) : null
+        ) : (
+          account && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <AccountIcon account={account} size="xs" />
+              <span className="text-xs text-muted-foreground truncate">
+                {getAccountName(account)}
+              </span>
+            </div>
+          )
         )}
       </div>
 

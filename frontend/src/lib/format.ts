@@ -146,10 +146,21 @@ export function formatCurrency(
   locale = 'en-US',
 ): string {
   if (value == null) return '—'
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
+  // Normalize -0 to 0 so we never render "-R$ 0,00" / "-$0.00"
+  const v = Object.is(value, -0) ? 0 : value
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(v)
+  } catch {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(v)
+  }
 }

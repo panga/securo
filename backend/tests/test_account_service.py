@@ -68,6 +68,7 @@ async def _add_txn(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
+    status: str = "posted",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -81,6 +82,7 @@ async def _add_txn(
         source=source,
         currency="BRL",
         transfer_pair_id=transfer_pair_id,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -632,7 +634,7 @@ async def test_reopen_not_found(session: AsyncSession, test_user, test_workspace
 
 @pytest.mark.asyncio
 async def test_get_accounts_returns_list(session: AsyncSession, test_user, test_workspace):
-    """get_accounts returns list with current_balance and previous_balance."""
+    """get_accounts returns list with current_balance."""
     account = await _make_account(session, test_user.id, "List Test", balance="1000.00")
     await _add_txn(session, test_user.id, account.id, 1000, "credit", date.today(), source="opening_balance")
 
@@ -641,7 +643,6 @@ async def test_get_accounts_returns_list(session: AsyncSession, test_user, test_
     acc = next(a for a in accounts if a["id"] == account.id)
     assert acc["name"] == "List Test"
     assert "current_balance" in acc
-    assert "previous_balance" in acc
 
 
 @pytest.mark.asyncio
@@ -678,6 +679,50 @@ async def test_get_accounts_credit_card_negated_balance(session: AsyncSession, t
     cc = next(a for a in accounts if a["id"] == account.id)
     # For bank-connected CC: current_balance = -balance
     assert cc["current_balance"] == pytest.approx(-3000.0)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_excludes_pending_for_non_cc(session: AsyncSession, test_user, test_workspace):
+    """Non-CC accounts exclude pending entries from current_balance.
+
+    credit 100 posted + debit 20 pending → the pending debit is dropped, so
+    the displayed balance is 100 (not 80).
+    """
+    account = await _make_account(session, test_user.id, "Pending Check")
+    await _add_txn(session, test_user.id, account.id, 100, "credit", date.today())
+    await _add_txn(session, test_user.id, account.id, 20, "debit", date.today(), status="pending")
+
+    accounts = await get_accounts(session, test_workspace.id)
+    acc = next(a for a in accounts if a["id"] == account.id)
+    assert acc["current_balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_excludes_pending_any_source(session: AsyncSession, test_user, test_workspace):
+    """Pending exclusion is status-only: manual, recurring and bank-sync all count."""
+    account = await _make_account(session, test_user.id, "Any Source")
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", date.today(), source="opening_balance")
+    await _add_txn(session, test_user.id, account.id, 10, "debit", date.today(), source="manual", status="pending")
+    await _add_txn(session, test_user.id, account.id, 20, "debit", date.today(), source="recurring", status="pending")
+    await _add_txn(session, test_user.id, account.id, 30, "debit", date.today(), source="sync", status="pending")
+
+    accounts = await get_accounts(session, test_workspace.id)
+    acc = next(a for a in accounts if a["id"] == account.id)
+    # 1000 - 10 - 20 - 30 pending all excluded → 1000
+    assert acc["current_balance"] == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_keeps_pending_for_credit_card(session: AsyncSession, test_user, test_workspace):
+    """Credit card accounts keep pending entries in current_balance (regression)."""
+    account = await _make_account(session, test_user.id, "Pending CC", acc_type="credit_card")
+    await _add_txn(session, test_user.id, account.id, 100, "credit", date.today())
+    await _add_txn(session, test_user.id, account.id, 20, "debit", date.today(), status="pending")
+
+    accounts = await get_accounts(session, test_workspace.id)
+    acc = next(a for a in accounts if a["id"] == account.id)
+    # CC keeps pending: 100 - 20 = 80
+    assert acc["current_balance"] == pytest.approx(80.0)
 
 
 # ---------------------------------------------------------------------------
@@ -771,6 +816,69 @@ async def test_get_account_summary_not_found(session: AsyncSession, test_user, t
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_get_account_summary_excludes_pending_non_cc(session: AsyncSession, test_user, test_workspace):
+    """Non-CC manual accounts exclude pending from current_balance.
+
+    Mirrors the get_accounts behavior: credit 100 posted + debit 20 pending →
+    displayed balance is 100 (pending debit dropped), not 80.
+    """
+    account = await _make_account(session, test_user.id, "Summary Pending")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["current_balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_keeps_pending_for_credit_card(session: AsyncSession, test_user, test_workspace):
+    """Manual credit card accounts keep pending entries in current_balance."""
+    account = await _make_account(session, test_user.id, "Summary CC", acc_type="credit_card")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    # CC keeps pending: 100 - 20 = 80
+    assert summary["current_balance"] == pytest.approx(80.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_opening_balance_connected_excludes_period_pending(
+    session, test_user, test_workspace, test_connection
+):
+    """Connected non-CC opening balance backs out period pending so the
+    frontend walk (opening + displayed period rows) does not double count them.
+
+    Provider balance 780 = posted 500 (last month) + posted 300 + pending −20
+    (this month). opening_balance must be 500 (= posted before period), not
+    480 (= 780 − posted-in-period, which would leave pending counted twice).
+    """
+    account = await _make_account(
+        session, test_user.id, "Conn Opening", balance="780.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    month_start = today.replace(day=1)
+    prev_month = (month_start - timedelta(days=1)).replace(day=1)
+    await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
+    await _add_txn(session, test_user.id, account.id, 300, "credit", month_start + timedelta(days=2))
+    pending_day = min(month_start + timedelta(days=4), today)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", pending_day, status="pending")
+
+    summary = await get_account_summary(
+        session, account.id, test_workspace.id,
+        date_from=month_start, date_to=today,
+    )
+    assert summary is not None
+    assert summary["current_balance"] == pytest.approx(780.0)
+    assert summary["opening_balance"] == pytest.approx(500.0)
+
+
 # ---------------------------------------------------------------------------
 # get_account_balance_history
 # ---------------------------------------------------------------------------
@@ -794,6 +902,29 @@ async def test_get_account_balance_history(session: AsyncSession, test_user, tes
     # Each entry has date and balance
     assert "date" in history[0]
     assert "balance" in history[0]
+
+
+@pytest.mark.asyncio
+async def test_get_account_balance_history_excludes_pending_non_cc(session: AsyncSession, test_user, test_workspace):
+    """Manual non-CC balance history drops pending deltas so the chart's end
+    point matches the posted-only "Saldo atual" card.
+
+    credit 100 posted day 1 + debit 20 pending today → every point stays 100
+    (the pending debit never moves the chart).
+    """
+    account = await _make_account(session, test_user.id, "Hist Pending")
+    today = date.today()
+    month_start = today.replace(day=1)
+    await _add_txn(session, test_user.id, account.id, 100, "credit", month_start)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    history = await get_account_balance_history(
+        session, account.id, test_workspace.id,
+        date_from=month_start, date_to=today,
+    )
+    assert history is not None
+    last = next(p for p in history if p["date"] == today.isoformat())
+    assert last["balance"] == pytest.approx(100.0)
 
 
 @pytest.mark.asyncio
@@ -908,7 +1039,7 @@ async def test_update_simplefin_account_to_credit_card_flips_balance(
     # Stored balance flips to positive-for-debt (matches Pluggy/Enable).
     assert updated.balance == Decimal("500.00")
     # Resolved/serialized balance is negative = the user owes 500.
-    payload = serialize_account(updated, None, None)
+    payload = serialize_account(updated, None)
     assert payload["current_balance"] == pytest.approx(-500.0)
 
 
@@ -952,7 +1083,7 @@ async def test_update_pluggy_account_to_credit_card_does_not_flip(
     assert updated.type == "credit_card"
     # Untouched — Pluggy was already positive-for-debt.
     assert updated.balance == Decimal("500.00")
-    payload = serialize_account(updated, None, None)
+    payload = serialize_account(updated, None)
     assert payload["current_balance"] == pytest.approx(-500.0)
 
 

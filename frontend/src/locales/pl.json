@@ -621,6 +621,7 @@
     "confirmDisconnectDesc": "Spowoduje to odłączenie {{institution}} oraz usunięcie z aplikacji zsynchronizowanych kont i transakcji. Ta operacja jest nieodwracalna.",
     "viewTransactions": "Zobacz transakcje",
     "currentBalance": "Bieżące saldo",
+    "projectedBalance": "Saldo prognozowane",
     "income": "Przychody",
     "expenses": "Wydatki",
     "thisMonth": "Bieżący miesiąc",

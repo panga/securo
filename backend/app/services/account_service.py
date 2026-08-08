@@ -73,19 +73,19 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .subquery()
     )
 
-    # Subquery: compute previous_balance (balance at end of previous month)
-    today = _Date.today()
-    first_of_month = today.replace(day=1)
-    prev_month_end = first_of_month - timedelta(days=1)
-
-    prev_balance_sq = (
+    # Subquery: net pending per account (credit +, debit −). Pending of any
+    # source (manual, recurring, bank-sync) counts — the filter is by status
+    # only. Excluded from displayed balances for non-CC accounts; credit cards
+    # keep including pending entries (they're excluded at serialize time).
+    pending_sq = (
         select(
             Transaction.account_id,
-            func.coalesce(func.sum(signed_amount), 0).label("previous_balance"),
+            func.coalesce(func.sum(signed_amount), 0).label("pending_balance"),
         )
+        .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
-            Transaction.date <= prev_month_end,
+            Transaction.status == "pending",
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -96,17 +96,18 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .subquery()
     )
 
+
     # Build the query
     query = (
         select(
             Account,
             BankConnection,
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
-            func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
+            func.coalesce(pending_sq.c.pending_balance, 0).label("pending_balance"),
         )
         .outerjoin(BankConnection)
         .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
-        .outerjoin(prev_balance_sq, Account.id == prev_balance_sq.c.account_id)
+        .outerjoin(pending_sq, Account.id == pending_sq.c.account_id)
         .where(
             or_(
                 Account.workspace_id == workspace_id,
@@ -116,12 +117,62 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     )
     if not include_closed:
         query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    query = query.order_by(
+        case(
+            (Account.display_name.isnot(None), Account.display_name),
+            else_=Account.name,
+        )
+    )
     result = await session.execute(query)
     return [
-            serialize_account(acc, current_balance, previous_balance, connection)
-            for acc, connection, current_balance, previous_balance in result.all()
-        ]
+        serialize_account(acc, current_balance, connection, pending_balance)
+        for acc, connection, current_balance, pending_balance in result.all()
+    ]
+
+
+async def net_pending_by_account(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    account_ids: Optional[list[uuid.UUID]] = None,
+) -> dict[uuid.UUID, float]:
+    """Net pending per non-CC account: credit +, debit −.
+
+    Pending of any source (manual, recurring, bank-sync) counts — the filter
+    is by status only, mirroring ``get_accounts``' signed-amount math. Credit
+    card accounts are excluded because their balances keep including pending
+    entries. Used by the dashboard to drop pending from balance totals.
+    """
+    effective_amount = case(
+        (Transaction.currency == Account.currency, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
+    )
+    signed_amount = case(
+        (Transaction.type == "credit", effective_amount),
+        else_=-effective_amount,
+    )
+    stmt = (
+        select(
+            Transaction.account_id,
+            func.coalesce(func.sum(signed_amount), 0).label("net_pending"),
+        )
+        .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.status == "pending",
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
+            Account.type != "credit_card",
+        )
+        .group_by(Transaction.account_id)
+    )
+    if account_ids is not None:
+        stmt = stmt.where(Transaction.account_id.in_(account_ids))
+    result = await session.execute(stmt)
+    return {row[0]: float(row[1] or 0) for row in result.all()}
 
 
 def _institution_name(connection: Optional[BankConnection]) -> Optional[str]:
@@ -133,8 +184,8 @@ def _institution_name(connection: Optional[BankConnection]) -> Optional[str]:
 def serialize_account(
     acc: Account,
     current_balance: Optional[Decimal],
-    previous_balance: Optional[Decimal],
     connection: Optional[BankConnection] = None,
+    pending_balance: Optional[Decimal] = None,
 ) -> dict:
     # Connected CC: provider stores positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
@@ -142,6 +193,14 @@ def serialize_account(
         resolved_balance = float(acc.balance) * (-1 if acc.type == "credit_card" else 1)
     else:
         resolved_balance = float(current_balance or 0)
+
+    # For manual accounts, the computed balance includes pending transactions;
+    # subtract them so the displayed balance is posted-only (consistent with
+    # the summary endpoint).  Connected accounts use the provider's balance
+    # directly (account.balance) which is already authoritative — do NOT
+    # subtract pending there as it would double-subtract or inflate.
+    if not acc.connection_id and acc.type != "credit_card":
+        resolved_balance -= float(pending_balance or 0)
 
     payload = {
         "id": acc.id,
@@ -155,7 +214,6 @@ def serialize_account(
         "balance": acc.balance,
         "currency": acc.currency,
         "current_balance": resolved_balance,
-        "previous_balance": float(previous_balance or 0),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,
@@ -644,6 +702,22 @@ async def get_account_summary(
         current_balance = float(account.balance)
     else:
         # Current balance = SUM(credit amounts) - SUM(debit amounts)
+        balance_filters = [
+            Transaction.account_id == account_id,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Transaction.category_id.not_in(
+                    select(Category.id).where(Category.is_ignored == True)
+                ),
+            ),
+        ]
+        # Non-CC manual accounts: exclude pending transactions so the
+        # summary's current_balance aligns with get_accounts (which
+        # also excludes pending for non-CC).  Credit cards keep pending
+        # entries in their balance.
+        if account.type != "credit_card":
+            balance_filters.append(Transaction.status == "posted")
         balance_result = await session.execute(
             select(
                 func.coalesce(
@@ -655,16 +729,7 @@ async def get_account_summary(
                     ),
                     0,
                 )
-            ).where(
-                Transaction.account_id == account_id,
-                Transaction.is_ignored == False,
-                or_(
-                    Transaction.category_id.is_(None),
-                    Transaction.category_id.not_in(
-                        select(Category.id).where(Category.is_ignored == True)
-                    ),
-                ),
-            )
+            ).where(*balance_filters)
         )
         current_balance = float(balance_result.scalar() or 0)
 
@@ -781,9 +846,53 @@ async def get_account_summary(
         )
     monthly_expenses = float(expenses_result.scalar())
 
+    # Opening balance: the account's balance at (date_from − 1 day).
+    # Anchored to current_balance (provider for connected, sum-of-posted
+    # for manual) so the frontend can seed the running-balance walk and
+    # the "Saldo projetado" card matches the balance at period end.
+    #
+    # For connected accounts the provider balance includes pending entries;
+    # the frontend walk re-adds the period's pending rows, so back those out
+    # of the opening balance to avoid counting them twice (same convention as
+    # net_pending_by_account used by the dashboard).
+    if account.type != "credit_card" and date_from:
+        ob_base_filters = [
+            Transaction.account_id == account_id,
+            Transaction.date >= date_from,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Transaction.category_id.not_in(
+                    select(Category.id).where(Category.is_ignored == True)
+                ),
+            ),
+        ]
+        ob_result = await session.execute(
+            select(func.coalesce(func.sum(
+                case(
+                    (Transaction.type == "credit", effective_amount),
+                    else_=-effective_amount,
+                )
+            ), 0)).where(*ob_base_filters, Transaction.status == "posted")
+        )
+        opening_balance = current_balance - float(ob_result.scalar() or 0)
+        if account.connection_id:
+            pending_result = await session.execute(
+                select(func.coalesce(func.sum(
+                    case(
+                        (Transaction.type == "credit", effective_amount),
+                        else_=-effective_amount,
+                    )
+                ), 0)).where(*ob_base_filters, Transaction.status == "pending")
+            )
+            opening_balance -= float(pending_result.scalar() or 0)
+    else:
+        opening_balance = 0.0
+
     return {
         "account_id": account_id,
         "current_balance": current_balance,
+        "opening_balance": opening_balance,
         "monthly_income": monthly_income,
         "monthly_expenses": monthly_expenses,
     }
@@ -805,21 +914,26 @@ def _signed_amount_expr(account_currency: str):
 async def _account_balance_at(
     session: AsyncSession, account_id: uuid.UUID, cutoff: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = True,
 ) -> float:
     """Get balance for a single account at a specific date.
     Excludes ignored transactions from the balance calculation."""
+    filters = [
+        Transaction.account_id == account_id,
+        Transaction.date <= cutoff,
+        Transaction.is_ignored == False,
+        or_(
+            Transaction.category_id.is_(None),
+            Category.is_ignored == False,
+        ),
+    ]
+    if not include_pending:
+        filters.append(Transaction.status == "posted")
     result = await session.execute(
         select(func.coalesce(func.sum(_signed_amount_expr(account_currency)), 0))
         .outerjoin(Category, Transaction.category_id == Category.id)
-        .where(
-            Transaction.account_id == account_id,
-            Transaction.date <= cutoff,
-            Transaction.is_ignored == False,
-            or_(
-                Transaction.category_id.is_(None),
-                Category.is_ignored == False,
-            ),
-        )
+        .where(*filters)
     )
     return float(result.scalar() or 0)
 
@@ -828,30 +942,40 @@ async def _account_daily_balance_series(
     session: AsyncSession, account_id: uuid.UUID,
     date_from: _Date, date_to: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = True,
 ) -> list[dict]:
     """Build daily balance series for [date_from, date_to] inclusive.
-    Excludes ignored transactions from balance calculations."""
+    Excludes ignored transactions from balance calculations.
+    ``include_pending=False`` drops pending entries (manual accounts) so the
+    series matches the posted-only "Saldo atual" card."""
     # Get balance at end of day before range start
-    start_balance = await _account_balance_at(session, account_id, date_from - timedelta(days=1), account_currency)
+    start_balance = await _account_balance_at(
+        session, account_id, date_from - timedelta(days=1), account_currency,
+        include_pending=include_pending,
+    )
 
     # Get daily deltas within range: group by actual date
     # Exclude ignored transactions from daily deltas
+    filters = [
+        Transaction.account_id == account_id,
+        Transaction.date >= date_from,
+        Transaction.date <= date_to,
+        Transaction.is_ignored == False,
+        or_(
+            Transaction.category_id.is_(None),
+            Category.is_ignored == False,
+        ),
+    ]
+    if not include_pending:
+        filters.append(Transaction.status == "posted")
     result = await session.execute(
         select(
             Transaction.date,
             func.sum(_signed_amount_expr(account_currency)),
         )
         .outerjoin(Category, Transaction.category_id == Category.id)
-        .where(
-            Transaction.account_id == account_id,
-            Transaction.date >= date_from,
-            Transaction.date <= date_to,
-            Transaction.is_ignored == False,
-            or_(
-                Transaction.category_id.is_(None),
-                Category.is_ignored == False,
-            ),
-        )
+        .where(*filters)
         .group_by(Transaction.date)
     )
     deltas = {row[0]: float(row[1] or 0) for row in result.all()}
@@ -884,7 +1008,14 @@ async def get_account_balance_history(
 
     sign = -1.0 if (account.type == "credit_card" and account.connection_id) else 1.0
 
-    series = await _account_daily_balance_series(session, account_id, date_from, date_to, account.currency)
+    # Non-CC manual accounts: exclude pending so the chart's end point matches
+    # the posted-only "Saldo atual" card. Connected accounts keep their
+    # provider-view behavior; credit cards keep pending (unchanged).
+    include_pending = account.connection_id or account.type == "credit_card"
+    series = await _account_daily_balance_series(
+        session, account_id, date_from, date_to, account.currency,
+        include_pending=include_pending,
+    )
 
     if sign != 1.0:
         for point in series:

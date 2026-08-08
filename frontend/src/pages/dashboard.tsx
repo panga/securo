@@ -51,10 +51,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
@@ -213,7 +210,7 @@ export default function DashboardPage() {
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
   })
 
   const { data: budgetComparison } = useQuery({
@@ -489,7 +486,7 @@ export default function DashboardPage() {
         categoryIcon: pt.category_icon,
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
-        accountId: null,
+        accountId: pt.account_id ?? null,
         isProjected: true,
         attachmentCount: 0,
         isShared: false,
@@ -1090,7 +1087,7 @@ export default function DashboardPage() {
                             </span>
                           )}
                           {row.isProjected && (
-                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
+                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full shrink-0">
                               {t('transactions.recurringBadge')}
                             </span>
                           )}

@@ -588,6 +588,7 @@
     "confirmDisconnectDesc": "Це відв'яже {{institution}} та видалить синхронізовані рахунки й транзакції із застосунку. Ця дія незворотна.",
     "viewTransactions": "Перегляд транзакцій",
     "currentBalance": "Поточний баланс",
+    "projectedBalance": "Прогнозований баланс",
     "income": "Дохід",
     "expenses": "Витрати",
     "thisMonth": "Цей місяць",

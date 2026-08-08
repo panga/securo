@@ -11,6 +11,9 @@ docs/plans/
 tmp/
 docker-compose.override.yml
 
+# Root plan documents stay local and are never committed
+PLAN.md
+
 # Ignore local configuration files
 .vscode/
 

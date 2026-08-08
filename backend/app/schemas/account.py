@@ -56,7 +56,6 @@ class AccountRead(AccountBase):
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
-    previous_balance: Optional[float] = None
     balance_primary: Optional[float] = None
     credit_limit: Optional[float] = None
     available_credit: Optional[float] = None
@@ -94,8 +93,10 @@ class CreditCardBillRead(BaseModel):
 class AccountSummary(BaseModel):
     account_id: uuid.UUID
     current_balance: float
+    opening_balance: float = 0.0
     monthly_income: float
     monthly_expenses: float
     current_balance_primary: Optional[float] = None
+    opening_balance_primary: Optional[float] = None
     monthly_income_primary: Optional[float] = None
     monthly_expenses_primary: Optional[float] = None

@@ -370,28 +370,6 @@ async def test_credit_card_summary_returns_negative_balance(
 
 
 @pytest.mark.asyncio
-async def test_list_accounts_includes_previous_balance(client: AsyncClient, auth_headers):
-    """Account list should include previous_balance field."""
-    # Create account
-    response = await client.post(
-        "/api/accounts",
-        json={"name": "Test PB", "type": "checking", "balance": 1000},
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-
-    # List accounts
-    response = await client.get("/api/accounts", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) > 0
-    # Find our account
-    test_acc = [a for a in data if a["name"] == "Test PB"][0]
-    assert "previous_balance" in test_acc
-    assert isinstance(test_acc["previous_balance"], (int, float))
-
-
-@pytest.mark.asyncio
 async def test_list_accounts_include_closed(client: AsyncClient, auth_headers):
     resp = await client.post(
         "/api/accounts",
@@ -505,6 +483,58 @@ async def test_get_account_summary_with_dates(client: AsyncClient, auth_headers)
         headers=auth_headers,
     )
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_account_summary_excludes_pending_non_cc(
+    client: AsyncClient, auth_headers
+):
+    """Account summary excludes pending transactions for non-CC manual accounts.
+
+    credit 100 posted + debit 20 pending → balance = 100 (pending dropped).
+    """
+    # Create a manual checking account
+    create_resp = await client.post(
+        "/api/accounts",
+        json={"name": "Summary Pending", "type": "checking", "balance": "0", "currency": "BRL"},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 201
+    acct_id = create_resp.json()["id"]
+
+    # Create posted credit
+    await client.post(
+        "/api/transactions",
+        json={
+            "account_id": acct_id,
+            "amount": 100,
+            "type": "credit",
+            "date": "2026-08-01",
+            "description": "Salary",
+        },
+        headers=auth_headers,
+    )
+    # Create pending debit
+    await client.post(
+        "/api/transactions",
+        json={
+            "account_id": acct_id,
+            "amount": 20,
+            "type": "debit",
+            "date": "2026-08-01",
+            "description": "Pending purchase",
+            "status": "pending",
+        },
+        headers=auth_headers,
+    )
+
+    resp = await client.get(
+        f"/api/accounts/{acct_id}/summary",
+        params={"from": "2026-08-01", "to": "2026-08-31"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["current_balance"] == pytest.approx(100.0)
 
 
 # --- display_name tests ---

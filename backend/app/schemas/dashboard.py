@@ -52,6 +52,7 @@ class BalanceHistory(BaseModel):
 
 class ProjectedTransaction(BaseModel):
     recurring_id: str
+    account_id: Optional[str] = None
     description: str
     amount: float
     amount_primary: Optional[float] = None

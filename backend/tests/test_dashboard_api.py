@@ -554,3 +554,136 @@ async def test_balance_date_parameter_overrides_default_cutoff(client, auth_head
     )
     total2 = sum(float(v) for v in resp2.json()["total_balance"].values())
     assert total2 == 700.0, f"Expected 700.0 with default cutoff, got {total2}"
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_account_id_and_range(client, auth_headers, test_account, test_categories):
+    """projected-transactions filters by account_id and an inclusive from/to range."""
+    next_month = _next_month_str()
+    next_month_date = date.fromisoformat(next_month)
+
+    # Second account via API so we can prove the account_id filter.
+    resp = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Conta Investimentos", "type": "wallet", "balance": "0.00", "currency": "BRL"},
+    )
+    assert resp.status_code == 201
+    second_account_id = resp.json()["id"]
+
+    # Recurring on each account, both starting the 1st of next month.
+    for account_id, desc in ((str(test_account.id), "Assinatura A"), (second_account_id, "Assinatura B")):
+        rec_resp = await client.post(
+            "/api/recurring-transactions",
+            json={
+                "description": desc,
+                "amount": 30.00,
+                "currency": "BRL",
+                "type": "debit",
+                "frequency": "monthly",
+                "start_date": next_month,
+                "category_id": str(test_categories[0].id),
+                "account_id": account_id,
+            },
+            headers=auth_headers,
+        )
+        assert rec_resp.status_code == 201
+
+    # account_id + inclusive one-day range [1st, 1st] → exactly the 1st occurrence of A.
+    filtered = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"account_id": str(test_account.id), "from": next_month, "to": next_month},
+        headers=auth_headers,
+    )
+    assert filtered.status_code == 200
+    items = filtered.json()
+    assert len(items) == 1
+    assert items[0]["description"] == "Assinatura A"
+    assert items[0]["date"] == next_month
+
+    # Same range without account_id → both accounts project.
+    both = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": next_month},
+        headers=auth_headers,
+    )
+    assert both.status_code == 200
+    assert {p["description"] for p in both.json()} == {"Assinatura A", "Assinatura B"}
+
+    # No params → defaults to the current month, where nothing is projected.
+    defaults = await client.get("/api/dashboard/projected-transactions", headers=auth_headers)
+    assert defaults.status_code == 200
+    assert defaults.json() == []
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_range_excludes_outside_dates(
+    client, auth_headers, test_account, test_categories
+):
+    """The from/to range is inclusive: dates outside it are not projected."""
+    next_month = _next_month_str()
+    next_month_date = date.fromisoformat(next_month)
+    day_after = (next_month_date + timedelta(days=1)).isoformat()
+
+    rec_resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Aluguel",
+            "amount": 900.00,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": next_month,
+            "category_id": str(test_categories[0].id),
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert rec_resp.status_code == 201
+
+    # Range entirely before the occurrence → nothing returned.
+    prev_month = _prev_month_str()
+    empty = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": prev_month, "to": prev_month},
+        headers=auth_headers,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    # Range covering the 1st and the day after → only the 1st occurrence.
+    covering = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": day_after},
+        headers=auth_headers,
+    )
+    assert covering.status_code == 200
+    assert len(covering.json()) == 1
+    assert covering.json()[0]["date"] == next_month
+
+
+async def test_projected_transactions_from_to_must_be_pair(client, auth_headers, test_account, test_categories):
+    """Lone or inverted from/to bounds are rejected with 422."""
+    next_month = _next_month_str()
+
+    lone_from = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month},
+        headers=auth_headers,
+    )
+    assert lone_from.status_code == 422
+
+    lone_to = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"to": next_month},
+        headers=auth_headers,
+    )
+    assert lone_to.status_code == 422
+
+    prev_month = _prev_month_str()
+    inverted = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": prev_month},
+        headers=auth_headers,
+    )
+    assert inverted.status_code == 422

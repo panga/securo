@@ -588,6 +588,7 @@
     "confirmDisconnectDesc": "Dadurch wird die Verknüpfung mit {{institution}} aufgehoben und die synchronisierten Konten und Transaktionen werden aus der App gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
     "viewTransactions": "Transaktionen anzeigen",
     "currentBalance": "Aktueller Saldo",
+    "projectedBalance": "Prognostizierter Saldo",
     "income": "Einnahmen",
     "expenses": "Ausgaben",
     "thisMonth": "Diesen Monat",

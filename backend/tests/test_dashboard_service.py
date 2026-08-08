@@ -213,6 +213,57 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     assert totals.get("USD", 0) == pytest.approx(500.0)
 
 
+@pytest.mark.asyncio
+async def test_total_balance_excludes_pending_for_non_cc(session: AsyncSession, test_user, test_workspace):
+    """Non-CC totals drop pending entries when include_pending=False.
+
+    credit 100 posted + debit 20 pending → 80 with pending, 100 without.
+    """
+    account = await _make_account(session, test_user.id, "Tot Pending", balance="0.00")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    with_pending = await _total_balance_by_currency(session, test_workspace.id, today, include_pending=True)
+    without_pending = await _total_balance_by_currency(session, test_workspace.id, today, include_pending=False)
+    assert with_pending.get("BRL", 0) == pytest.approx(80.0)
+    assert without_pending.get("BRL", 0) == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_keeps_pending_for_credit_card(session: AsyncSession, test_user, test_workspace):
+    """Credit card totals keep pending entries even with include_pending=False."""
+    account = await _make_account(session, test_user.id, "Tot CC", acc_type="credit_card", balance="0.00")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    without_pending = await _total_balance_by_currency(session, test_workspace.id, today, include_pending=False)
+    assert without_pending.get("BRL", 0) == pytest.approx(80.0)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_connected_drops_pending_via_net(
+    session: AsyncSession, test_user, test_workspace, test_connection
+):
+    """Connected non-CC balances subtract net pending when include_pending=False.
+
+    Provider balance 1000 already includes a pending debit 20; dropping
+    pending restores the posted-only balance of 1020.
+    """
+    account = await _make_account(
+        session, test_user.id, "Conn Pending", balance="1000.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 20, "debit", today, status="pending")
+
+    with_pending = await _total_balance_by_currency(session, test_workspace.id, today, include_pending=True)
+    without_pending = await _total_balance_by_currency(session, test_workspace.id, today, include_pending=False)
+    assert with_pending.get("BRL", 0) == pytest.approx(1000.0)
+    assert without_pending.get("BRL", 0) == pytest.approx(1020.0)
+
+
 # ---------------------------------------------------------------------------
 # get_summary
 # ---------------------------------------------------------------------------
@@ -732,6 +783,38 @@ async def test_balance_history_past_month(session, test_user, test_workspace):
     assert len(history.current) > 0
 
 
+@pytest.mark.asyncio
+async def test_balance_history_excludes_pending_for_non_cc(session, test_user, test_workspace):
+    """Balance history drops pending deltas for non-CC accounts.
+
+    credit 100 posted day 1 + debit 20 pending day 2 → balance stays 100 on
+    both days (the pending debit never moves the chart).
+    """
+    acct = await _make_account(session, test_user.id, "BH Pending")
+    month_start = date.today().replace(day=1)
+    await _add_txn(session, test_user.id, acct.id, 100, "credit", month_start)
+    await _add_txn(session, test_user.id, acct.id, 20, "debit", month_start + timedelta(days=1), status="pending")
+
+    history = await get_balance_history(session, test_workspace.id, test_user.id)
+    assert len(history.current) >= 2
+    assert history.current[0].balance == pytest.approx(100.0)
+    assert history.current[1].balance == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_history_keeps_pending_for_credit_card(session, test_user, test_workspace):
+    """Balance history keeps pending deltas for credit cards (regression)."""
+    acct = await _make_account(session, test_user.id, "BH CC", acc_type="credit_card")
+    month_start = date.today().replace(day=1)
+    await _add_txn(session, test_user.id, acct.id, 100, "credit", month_start)
+    await _add_txn(session, test_user.id, acct.id, 20, "debit", month_start + timedelta(days=1), status="pending")
+
+    history = await get_balance_history(session, test_workspace.id, test_user.id)
+    assert len(history.current) >= 2
+    assert history.current[0].balance == pytest.approx(100.0)
+    assert history.current[1].balance == pytest.approx(80.0)
+
+
 # ---------------------------------------------------------------------------
 # get_projected_transactions
 # ---------------------------------------------------------------------------
@@ -767,6 +850,77 @@ async def test_get_projected_transactions_with_recurring(session, test_user, tes
     assert result[0].description == "Monthly Rent"
     assert result[0].category_name == "Rent"
     assert result[0].amount == 2500.0
+
+
+@pytest.mark.asyncio
+async def test_get_projected_transactions_with_account_and_range(
+    session, test_user, test_workspace,
+):
+    """account_id filters to one account; from/to define an inclusive range."""
+    acc_a = await _make_account(session, test_user.id, "Proj A")
+    acc_b = await _make_account(session, test_user.id, "Proj B")
+    month_start = date.today().replace(day=1)
+    from datetime import datetime, timezone
+
+    for acc, desc in ((acc_a, "Rent A"), (acc_b, "Rent B")):
+        session.add(RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=acc.id, description=desc, amount=Decimal("100"),
+            currency="BRL", type="debit", frequency="monthly",
+            start_date=month_start, next_occurrence=month_start,
+            is_active=True, created_at=datetime.now(timezone.utc),
+        ))
+    await session.commit()
+
+    # account_id filter: only account A's projections come back.
+    result = await get_projected_transactions(
+        session, test_workspace.id, test_user.id,
+        account_id=acc_a.id,
+        from_date=month_start, to_date=month_start,
+    )
+    assert len(result) == 1
+    assert result[0].recurring_id
+    assert result[0].description == "Rent A"
+    assert result[0].date == month_start.isoformat()
+
+    # Without account_id, both accounts project in the range.
+    both = await get_projected_transactions(
+        session, test_workspace.id, test_user.id,
+        from_date=month_start, to_date=month_start,
+    )
+    assert {p.description for p in both} == {"Rent A", "Rent B"}
+
+
+@pytest.mark.asyncio
+async def test_get_projected_transactions_range_is_inclusive(session, test_user, test_workspace):
+    """A from/to range [start, end] is inclusive on both ends."""
+    acc = await _make_account(session, test_user.id, "Proj Range")
+    day = date.today().replace(day=15)
+    from datetime import datetime, timezone
+    session.add(RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=acc.id, description="Mid Month", amount=Decimal("50"),
+        currency="BRL", type="debit", frequency="monthly",
+        start_date=day, next_occurrence=day,
+        is_active=True, day_of_month=day.day,
+        created_at=datetime.now(timezone.utc),
+    ))
+    await session.commit()
+
+    # Day 15 occurrence is inside [15, 15].
+    inside = await get_projected_transactions(
+        session, test_workspace.id, test_user.id,
+        from_date=day, to_date=day,
+    )
+    assert len(inside) == 1
+    assert inside[0].date == day.isoformat()
+
+    # Day 16 is outside [14, 14] → no occurrences.
+    outside = await get_projected_transactions(
+        session, test_workspace.id, test_user.id,
+        from_date=day - timedelta(days=1), to_date=day - timedelta(days=1),
+    )
+    assert outside == []
 
 
 # ---------------------------------------------------------------------------

@@ -65,9 +65,11 @@ async def get_account_summary(
     primary_currency = ctx.user.primary_currency
     if account and account.currency != primary_currency:
         bal, _ = await convert(session, Decimal(str(summary["current_balance"])), account.currency, primary_currency)
+        ob, _ = await convert(session, Decimal(str(summary["opening_balance"])), account.currency, primary_currency)
         inc, _ = await convert(session, Decimal(str(summary["monthly_income"])), account.currency, primary_currency)
         exp, _ = await convert(session, Decimal(str(summary["monthly_expenses"])), account.currency, primary_currency)
         summary["current_balance_primary"] = float(bal)
+        summary["opening_balance_primary"] = float(ob)
         summary["monthly_income_primary"] = float(inc)
         summary["monthly_expenses_primary"] = float(exp)
 
@@ -133,7 +135,7 @@ async def get_account(
     account = await account_service.get_account(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None, account.connection)
+    return account_service.serialize_account(account, None, account.connection)
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -143,7 +145,7 @@ async def create_account(
     session: AsyncSession = Depends(get_async_session),
 ):
     account = await account_service.create_account(session, ctx.workspace.id, ctx.user_id, data)
-    return account_service.serialize_account(account, None, None)
+    return account_service.serialize_account(account, None)
 
 
 @router.patch("/{account_id}", response_model=AccountRead)
@@ -159,7 +161,7 @@ async def update_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None)
+    return account_service.serialize_account(account, None)
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

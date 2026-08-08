@@ -70,6 +70,7 @@ import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { formatCurrency } from '@/lib/format'
 
 type NavItem =
   | { type: 'link'; key: string; path: string; icon: React.ElementType }
@@ -96,12 +97,6 @@ const navItems: NavItem[] = [
   { type: 'link', key: 'splitGroups', path: '/groups', icon: Split },
   { type: 'link', key: 'rules', path: '/rules', icon: SlidersHorizontal },
 ]
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(
-    value,
-  )
-}
 
 export function AppLayout() {
   const { t } = useTranslation()
@@ -450,11 +445,7 @@ export function AppLayout() {
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
                   {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance)
-                    const prevBalance = acc.previous_balance ?? 0
-                    const pctChange = prevBalance !== 0
-                      ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100
-                      : null
+                    const balance = Number(acc.current_balance) || 0
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
@@ -474,11 +465,6 @@ export function AppLayout() {
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
                             {mask(formatCurrency(balance, acc.currency, locale))}
                           </span>
-                          {pctChange !== null && (
-                            <span className={`block text-[10px] tabular-nums font-medium ${pctChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {mask(`${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(1)}%`)}
-                            </span>
-                          )}
                         </div>
                       </Link>
                     )

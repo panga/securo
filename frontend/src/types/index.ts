@@ -138,7 +138,6 @@ export interface Account {
   type: string
   balance: number
   current_balance: number
-  previous_balance: number | null
   balance_primary: number | null
   currency: string
   credit_limit: number | null
@@ -180,9 +179,11 @@ export interface Collection {
 export interface AccountSummary {
   account_id: string
   current_balance: number
+  opening_balance: number
   monthly_income: number
   monthly_expenses: number
   current_balance_primary: number | null
+  opening_balance_primary: number | null
   monthly_income_primary: number | null
   monthly_expenses_primary: number | null
 }
@@ -235,6 +236,9 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // Virtual (non-materialized recurring projection) display row: rendered with
+  // a "projected" badge, non-clickable, and excluded from balance math.
+  virtual?: boolean
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
@@ -444,6 +448,7 @@ export interface RecurringTransaction {
 
 export interface ProjectedTransaction {
   recurring_id: string
+  account_id: string | null
   description: string
   amount: number
   amount_primary: number | null

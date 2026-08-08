@@ -588,6 +588,7 @@
     "confirmDisconnectDesc": "Isto vai desvincular {{institution}} e remover do app as contas e transações sincronizadas. Esta ação é irreversível.",
     "viewTransactions": "Ver transações",
     "currentBalance": "Saldo atual",
+    "projectedBalance": "Saldo projetado",
     "income": "Entradas",
     "expenses": "Saídas",
     "thisMonth": "Este mês",
