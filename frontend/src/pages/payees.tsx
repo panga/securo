@@ -81,20 +81,21 @@ export default function PayeesPage() {
   const [filterFavorites, setFilterFavorites] = useState(() => searchParams.get('is_favorite') === 'true')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
-  const prevSearchRef = useRef<string | null>(null)
-
-  // Sync state from URL when navigating
-  useEffect(() => {
-    const searchStr = searchParams.toString()
-    if (prevSearchRef.current === searchStr) return
-    prevSearchRef.current = searchStr
-
+  // Sync state from URL when navigating (e.g. from the command palette) while
+  // the page is already mounted. Typing in the search box does not touch the
+  // URL, so this only fires on genuine navigation events. Adjusting state
+  // during render is the React-recommended way to sync state from the URL
+  // without an extra effect round-trip.
+  const [syncedUrl, setSyncedUrl] = useState(() => searchParams.toString())
+  const searchStr = searchParams.toString()
+  if (syncedUrl !== searchStr) {
+    setSyncedUrl(searchStr)
     const nextQ = searchParams.get('q') ?? ''
     setSearch(nextQ)
     setSearchQuery(nextQ)
     setFilterType(searchParams.get('type') ?? '')
     setFilterFavorites(searchParams.get('is_favorite') === 'true')
-  }, [searchParams])
+  }
 
   // Sync states back to URL searchParams
   useEffect(() => {
@@ -123,11 +124,17 @@ export default function PayeesPage() {
     }
   }, [search])
 
-  // Clear selection on filter or search query change
-  useEffect(() => {
+  // Clear selection when the filters change. Adjusting state during render is
+  // the React-recommended way to reset state from changing inputs without an
+  // extra effect round-trip; `syncedFilterKey` remembers the filter combination
+  // the selection was last cleared for.
+  const [syncedFilterKey, setSyncedFilterKey] = useState(() => JSON.stringify([searchQuery, filterType, filterFavorites]))
+  const filterKey = JSON.stringify([searchQuery, filterType, filterFavorites])
+  if (syncedFilterKey !== filterKey) {
+    setSyncedFilterKey(filterKey)
     setSelectedIds(new Set())
     setLastSelectedId(null)
-  }, [searchQuery, filterType, filterFavorites])
+  }
 
   // Form state
   const [formName, setFormName] = useState('')
