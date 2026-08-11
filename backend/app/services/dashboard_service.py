@@ -59,7 +59,7 @@ async def _get_recurring_projections(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.treat_as_transfer.is_not(True),
@@ -85,6 +85,7 @@ async def _get_recurring_projections(
             range_start=month_start,
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
         )
         for occ_date in occurrences:
             projections.append({
@@ -763,7 +764,9 @@ async def get_projected_transactions(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < range_end,
+            # Include nominal dates just beyond the requested range because a
+            # previous-Friday adjustment can move them into it.
+            RecurringTransaction.start_date < range_end + timedelta(days=2),
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.treat_as_transfer.is_not(True),
@@ -799,6 +802,7 @@ async def get_projected_transactions(
             range_start=range_start,
             range_end=range_end,
             intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
         )
         cat_name, cat_icon, cat_color = cat_map.get(rec.category_id, (None, None, None)) if rec.category_id else (None, None, None)
 
@@ -918,11 +922,16 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
                 Transaction.is_ignored == False,
                 *status_filter,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
             )
         )
         bal = current_bal - float(delta_after or 0)
@@ -934,11 +943,16 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         result = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
                 Transaction.is_ignored == False,
                 *status_filter,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
             )
         )
         return float(result or 0)
