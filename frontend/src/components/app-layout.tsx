@@ -70,6 +70,7 @@ import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { formatCurrency } from '@/lib/format'
 
 type NavItem =
   | { type: 'link'; key: string; path: string; icon: React.ElementType }
@@ -96,12 +97,6 @@ const navItems: NavItem[] = [
   { type: 'link', key: 'splitGroups', path: '/groups', icon: Split },
   { type: 'link', key: 'rules', path: '/rules', icon: SlidersHorizontal },
 ]
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(
-    value,
-  )
-}
 
 export function AppLayout() {
   const { t } = useTranslation()
