@@ -50,7 +50,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import type { Rule, Transaction } from '@/types'
+import type { Rule, Transaction, TransactionEditPayload } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
@@ -243,7 +243,7 @@ export default function DashboardPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<Transaction> & { id: string }) =>
+    mutationFn: ({ id, ...data }: TransactionEditPayload & { id: string }) =>
       transactions.update(id, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
