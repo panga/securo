@@ -7,6 +7,7 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
+import { applyTransactionToBalance, excludeMaterializedProjections } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
@@ -632,7 +633,11 @@ export default function AccountDetailPage() {
   // into displayRows where running balances are computed for them.
   const projectedRows = useMemo((): TxWithBalance[] => {
     if (!projectedTxData) return []
-    return projectedTxData.map((p: ProjectedTransaction): TxWithBalance => ({
+    const unmaterialized = excludeMaterializedProjections(
+      projectedTxData,
+      txData?.items ?? [],
+    )
+    return unmaterialized.map((p: ProjectedTransaction): TxWithBalance => ({
       id: `projected-${p.recurring_id}-${p.date}`,
       user_id: '',
       account_id: id ?? null,
@@ -678,7 +683,7 @@ export default function AccountDetailPage() {
       virtual: true,
       runningBalance: 0,
     }))
-  }, [projectedTxData, id])
+  }, [projectedTxData, txData?.items, id])
 
   // Balance at the start of the period, used to seed the running-balance
   // walk so that the last row's balance matches the projected balance at
@@ -748,10 +753,9 @@ export default function AccountDetailPage() {
     const allTx = [...txData.items, ...projectedRows]
     const txByDay = new Map<string, number>()
     for (const tx of allTx) {
-      if (tx.source === 'opening_balance') continue
-      const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-      const signed = tx.type === 'credit' ? amt : -amt
-      txByDay.set(tx.date, (txByDay.get(tx.date) ?? 0) + signed)
+      if (tx.is_ignored) continue
+      const previous = txByDay.get(tx.date) ?? 0
+      txByDay.set(tx.date, applyTransactionToBalance(previous, tx, usePrimary))
     }
 
     const startDate = new Date(filterFrom + 'T00:00:00')
@@ -781,7 +785,7 @@ export default function AccountDetailPage() {
     )
     let running = 0
     const withBalance = ascending.map((tx) => {
-      if (tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
+      if (!tx.is_ignored && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
         const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
         if (tx.type === 'debit') running += amt
         else if (tx.type === 'credit') running -= amt
@@ -812,8 +816,7 @@ export default function AccountDetailPage() {
 
     let balance = openingBalance
     const withBalance = merged.map((tx) => {
-      const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-      balance += tx.type === 'credit' ? amt : -amt
+      balance = applyTransactionToBalance(balance, tx, usePrimary)
       return { ...tx, runningBalance: balance }
     })
     return withBalance.reverse()

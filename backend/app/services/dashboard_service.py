@@ -39,6 +39,32 @@ def _month_range(month: date) -> tuple[date, date]:
     return month_start, month_end
 
 
+async def _materialized_recurring_occurrences(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    recurring_ids: set[uuid.UUID],
+    range_start: date,
+    range_end: date,
+) -> set[tuple[uuid.UUID, date]]:
+    """Return linked recurring occurrences already represented by real rows."""
+    if not recurring_ids:
+        return set()
+
+    result = await session.execute(
+        select(Transaction.recurring_transaction_id, Transaction.date).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.recurring_transaction_id.in_(recurring_ids),
+            Transaction.date >= range_start,
+            Transaction.date < range_end,
+        )
+    )
+    return {
+        (recurring_id, transaction_date)
+        for recurring_id, transaction_date in result.all()
+        if recurring_id is not None
+    }
+
+
 async def _get_recurring_projections(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -75,9 +101,22 @@ async def _get_recurring_projections(
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
 
+    # A recurrence may already have been materialized without its nominal
+    # pointer being advanced yet (for example by generate-ahead workflows).
+    # Suppress the matching virtual row so clients never render or total the
+    # same occurrence twice.
+    materialized_occurrences = await _materialized_recurring_occurrences(
+        session,
+        workspace_id,
+        {rec.id for rec in recurring_list},
+        month_start,
+        month_end,
+    )
+
     projections = []
     for rec in recurring_list:
-        # Compute occurrences starting from next_occurrence (skips already-created transactions)
+        # Compute occurrences from the nominal pointer; linked rows are
+        # filtered explicitly below because the pointer can lag materialization.
         occurrences = get_occurrences_in_range(
             start=rec.next_occurrence,
             frequency=rec.frequency,
@@ -88,6 +127,8 @@ async def _get_recurring_projections(
             weekend_adjustment=rec.weekend_adjustment,
         )
         for occ_date in occurrences:
+            if (rec.id, occ_date) in materialized_occurrences:
+                continue
             projections.append({
                 "category_id": rec.category_id,
                 "amount": float(rec.amount),
@@ -782,6 +823,14 @@ async def get_projected_transactions(
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
 
+    materialized_occurrences = await _materialized_recurring_occurrences(
+        session,
+        workspace_id,
+        {rec.id for rec in recurring_list},
+        range_start,
+        range_end,
+    )
+
     # Pre-fetch categories for all recurring templates that have one
     cat_ids = {r.category_id for r in recurring_list if r.category_id}
     cat_map: dict[uuid.UUID, tuple[str, str, str]] = {}
@@ -815,6 +864,8 @@ async def get_projected_transactions(
             amt_primary = float(converted)
 
         for occ_date in occurrences:
+            if (rec.id, occ_date) in materialized_occurrences:
+                continue
             projections.append(ProjectedTransaction(
                 recurring_id=str(rec.id),
                 account_id=str(rec.account_id) if rec.account_id else None,

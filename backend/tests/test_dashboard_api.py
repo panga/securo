@@ -1,8 +1,12 @@
 """Tests for dashboard API endpoints."""
 import calendar
+import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
+
+from app.models.transaction import Transaction
 
 
 def _current_month_str() -> str:
@@ -659,6 +663,58 @@ async def test_projected_transactions_range_excludes_outside_dates(
     assert covering.status_code == 200
     assert len(covering.json()) == 1
     assert covering.json()[0]["date"] == next_month
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_excludes_materialized_occurrence(
+    client, auth_headers, session, test_user, test_workspace, test_account,
+    test_categories,
+):
+    """A linked real row replaces, rather than duplicates, its projection."""
+    occurrence = _next_month_str()
+    rec_resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "CXC - Auth0",
+            "amount": 13037.13,
+            "currency": "BRL",
+            "type": "credit",
+            "frequency": "monthly",
+            "start_date": occurrence,
+            "category_id": str(test_categories[0].id),
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert rec_resp.status_code == 201
+    recurring_id = uuid.UUID(rec_resp.json()["id"])
+    occurrence_date = date.fromisoformat(occurrence)
+
+    session.add(Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        category_id=test_categories[0].id,
+        description="CXC - Auth0",
+        amount=Decimal("13037.13"),
+        currency="BRL",
+        date=occurrence_date,
+        effective_date=occurrence_date,
+        type="credit",
+        source="recurring",
+        status="pending",
+        recurring_transaction_id=recurring_id,
+    ))
+    await session.commit()
+
+    response = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"account_id": str(test_account.id), "from": occurrence, "to": occurrence},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 async def test_projected_transactions_from_to_must_be_pair(client, auth_headers, test_account, test_categories):
