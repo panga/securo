@@ -808,6 +808,7 @@
     "generatePending": "Ausstehende erstellen",
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
+    "autoGenerateHelpAhead": "Erstellt Transaktionen als anstehend, einen Zeitraum im Voraus, damit Sie die kommenden Rechnungen sehen. Sie werden erst als gebucht markiert, wenn die Bank die Belastung bestätigt. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
     "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen."
   },
   "rules": {

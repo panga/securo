@@ -24,6 +24,8 @@ import { PageHeader } from '@/components/page-header'
 import { CategorySelect } from '@/components/category-select'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { autoGenerateHelpKey } from '@/lib/recurring-labels'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 
@@ -288,6 +290,7 @@ function RecurringForm({
   loading: boolean
 }) {
   const { t } = useTranslation()
+  const { recurringGenerateAhead } = useFeatureFlags()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const { data: supportedCurrencies } = useQuery({
@@ -435,7 +438,9 @@ function RecurringForm({
         />
         <span className="text-sm text-foreground">
           {t('recurring.autoGenerate')}
-          <span className="block text-xs text-muted-foreground">{t('recurring.autoGenerateHelp')}</span>
+          <span className="block text-xs text-muted-foreground">
+            {t(autoGenerateHelpKey(recurringGenerateAhead))}
+          </span>
         </span>
       </label>
       {recurring && (

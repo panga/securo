@@ -1292,7 +1292,11 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean }
+  features: {
+    agents: boolean
+    tesouro_direto?: boolean
+    recurring_generate_ahead?: boolean
+  }
 }
 
 export const info = {

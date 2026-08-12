@@ -11,6 +11,7 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.providers.base import (
     AccountData,
@@ -32,6 +33,7 @@ from app.services.connection_service import (
     sync_connection,
     update_connection_settings,
 )
+from app.services.recurring_transaction_service import generate_pending
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +714,105 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
 
     assert result_conn.status == "active"
     assert merged == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_merging_ahead_placeholder_advances_recurring_pointer(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A bank charge merged into an ahead row must not be regenerated."""
+    from types import SimpleNamespace
+
+    conn = await _make_connection(session, test_user.id, "Recurring Bank")
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="recurring-acc-1",
+        name="Checking",
+        type="checking",
+        balance=Decimal("500"),
+        currency="BRL",
+    )
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Netflix Subscription",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        start_date=date(2025, 1, 1),
+        next_occurrence=date(2025, 1, 1),
+        auto_generate=True,
+        is_active=True,
+    )
+    session.add_all([account, recurring])
+    await session.commit()
+
+    with patch(
+        "app.services.recurring_transaction_service.get_settings",
+        return_value=SimpleNamespace(recurring_generate_ahead=True),
+    ):
+        assert await generate_pending(session, test_user.id, up_to=date(2025, 1, 1)) == 2
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="recurring-acc-1",
+            name="Checking",
+            type="checking",
+            balance=Decimal("500"),
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="recurring-tx-1",
+            description="NETFLIX SUBSCRIPTION",
+            amount=Decimal("39.90"),
+            date=date(2025, 2, 1),
+            type="debit",
+            currency="BRL",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        _, merged = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    assert merged == 1
+    await session.refresh(recurring)
+    assert recurring.next_occurrence == date(2025, 3, 1)
+
+    rows = (await session.execute(
+        select(Transaction)
+        .where(Transaction.recurring_transaction_id == recurring.id)
+        .order_by(Transaction.date)
+    )).scalars().all()
+    assert [row.date for row in rows] == [date(2025, 1, 1), date(2025, 2, 1)]
+    assert rows[1].source == "sync"
+
+    with patch(
+        "app.services.recurring_transaction_service.get_settings",
+        return_value=SimpleNamespace(recurring_generate_ahead=True),
+    ):
+        assert await generate_pending(session, test_user.id, up_to=date(2025, 2, 1)) == 1
+
+    rows = (await session.execute(
+        select(Transaction)
+        .where(Transaction.recurring_transaction_id == recurring.id)
+        .order_by(Transaction.date)
+    )).scalars().all()
+    assert [row.date for row in rows] == [
+        date(2025, 1, 1), date(2025, 2, 1), date(2025, 3, 1)
+    ]
 
 
 @pytest.mark.asyncio

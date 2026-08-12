@@ -808,6 +808,7 @@
     "generatePending": "Generar pendientes",
     "autoGenerate": "Generar transacciones automáticamente",
     "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
+    "autoGenerateHelpAhead": "Crea transacciones como pendientes, con un período de antelación, para que veas las próximas facturas. Solo pasan a confirmadas cuando el banco confirma el cargo. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarlas solo como próximas hasta entonces.",
     "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar."
   },
   "rules": {

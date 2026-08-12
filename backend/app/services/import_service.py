@@ -764,6 +764,10 @@ async def import_transactions(
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
+            # Imported charges are settled — a pending ahead row (created by
+            # RECURRING_GENERATE_AHEAD) flips to posted once the real charge
+            # confirms it, instead of staying pending forever.
+            placeholder.status = "posted"
             if import_payee_raw and not placeholder.payee:
                 placeholder.payee = import_payee_raw
                 placeholder.payee_id = import_payee_id

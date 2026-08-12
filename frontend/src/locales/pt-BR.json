@@ -808,6 +808,7 @@
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
+    "autoGenerateHelpAhead": "Cria transações como pendentes, com um período de antecedência, para você ver as contas futuras. Elas só se tornam confirmadas quando o banco confirma o lançamento. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-las apenas como previstas até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar."
   },
   "rules": {

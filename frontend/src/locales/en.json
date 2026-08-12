@@ -808,6 +808,7 @@
     "generatePending": "Generate Pending",
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
+    "autoGenerateHelpAhead": "Create transactions as pending, one period ahead of time, so you see the upcoming bills. They become posted only when the bank confirms the charge. Turn off to wait for the real charge (e.g. from bank sync) and only show them as upcoming until then.",
     "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change."
   },
   "rules": {

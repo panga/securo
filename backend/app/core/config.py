@@ -120,6 +120,13 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
+    # Generate recurring occurrences one period ahead, always as "pending".
+    # RECURRING_GENERATE_AHEAD=true → generate_pending also materializes the
+    # next occurrence as pending, so auto_generate bills show one period ahead.
+    # Pending rows only flip to posted when a real synced/imported charge
+    # merges into them (or the user edits them) — auto-generate never flips.
+    recurring_generate_ahead: bool = False
+
     # The CWD-relative ".env" is kept for backward compatibility; the anchored
     # backend/.env guarantees the API and the Celery worker/beat resolve the
     # same file no matter which working directory each service is launched

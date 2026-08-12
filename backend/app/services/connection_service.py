@@ -17,6 +17,7 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
@@ -1408,6 +1409,30 @@ async def sync_connection(
                         placeholder.payee_id = (
                             await get_or_create_payee(session, user_id, txn_data.payee)
                         ).id
+                    # The ahead row deliberately leaves next_occurrence at the
+                    # confirmed occurrence. Advance it now that the bank has
+                    # fulfilled that occurrence; otherwise the next generation
+                    # run can create a duplicate after source flips to "sync".
+                    if placeholder.recurring_transaction_id is not None:
+                        recurring = await session.get(
+                            RecurringTransaction, placeholder.recurring_transaction_id
+                        )
+                        if recurring is not None:
+                            # Due placeholders have already advanced the pointer;
+                            # ahead placeholders have not. Only advance for the
+                            # latter, including weekend-adjusted occurrences.
+                            from app.services.recurring_transaction_service import (
+                                adjust_weekend_date,
+                            )
+
+                            expected_date = adjust_weekend_date(
+                                recurring.next_occurrence,
+                                recurring.weekend_adjustment,
+                            )
+                            if placeholder.date == expected_date:
+                                recurring_match_service.advance_past(
+                                    recurring, txn_data.date
+                                )
                     merged_count += 1
                     continue
 
