@@ -33,6 +33,7 @@ from app.services.account_service import (
     get_accounts,
     reopen_account,
     serialize_account,
+    sync_opening_balance_for_connected_account,
     update_account,
 )
 
@@ -877,6 +878,68 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
     assert summary is not None
     assert summary["current_balance"] == pytest.approx(780.0)
     assert summary["opening_balance"] == pytest.approx(500.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_connected_excludes_future_rows_from_opening_balance(
+    session, test_user, test_workspace, test_connection
+):
+    """Future-dated rows remain projections and do not shift today's opening."""
+    account = await _make_account(
+        session, test_user.id, "Conn Future Rows", balance="780.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    month_start = today.replace(day=1)
+    prev_month = (month_start - timedelta(days=1)).replace(day=1)
+    await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
+    await _add_txn(session, test_user.id, account.id, 300, "credit", month_start + timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 20, "debit",
+        min(month_start + timedelta(days=4), today), status="pending",
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today + timedelta(days=10),
+    )
+
+    summary = await get_account_summary(
+        session, account.id, test_workspace.id,
+        date_from=month_start, date_to=today,
+    )
+
+    assert summary is not None
+    assert summary["opening_balance"] == pytest.approx(500.0)
+
+
+@pytest.mark.asyncio
+async def test_sync_opening_balance_ignores_future_and_ignored_rows(
+    session, test_user, test_workspace, test_connection
+):
+    """Provider reconciliation uses only active rows dated through today."""
+    account = await _make_account(
+        session, test_user.id, "Sync Future Rows", balance="600.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", today + timedelta(days=10))
+    ignored = await _add_txn(session, test_user.id, account.id, 75, "debit", today - timedelta(days=2))
+    ignored.is_ignored = True
+    await session.commit()
+
+    await sync_opening_balance_for_connected_account(session, account)
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+
+    assert opening.type == "credit"
+    assert opening.amount == Decimal("100.00")
 
 
 # ---------------------------------------------------------------------------

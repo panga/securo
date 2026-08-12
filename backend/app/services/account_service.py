@@ -501,6 +501,12 @@ async def sync_opening_balance_for_connected_account(
     if account.connection_id is None:
         return
 
+    # The provider balance is a snapshot for today. Future-dated transactions
+    # are projections and must not change the synthetic opening transaction;
+    # otherwise a later-dated row can shift the opening balance even though it
+    # is not part of the provider's current balance yet.
+    balance_cutoff = _Date.today()
+
     # For connected CC accounts the stored balance is positive debt and the UI
     # displays it negated (account_service.serialize_account). The sum of signed
     # transaction amounts on a CC trends negative as debt accrues, so the target
@@ -522,6 +528,14 @@ async def sync_opening_balance_for_connected_account(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            Transaction.date <= balance_cutoff,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Transaction.category_id.not_in(
+                    select(Category.id).where(Category.is_ignored == True)
+                ),
+            ),
         )
     )
     tx_sum = Decimal(str(sum_result.scalar() or 0))
@@ -546,6 +560,14 @@ async def sync_opening_balance_for_connected_account(
         select(func.min(Transaction.date)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            Transaction.date <= balance_cutoff,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Transaction.category_id.not_in(
+                    select(Category.id).where(Category.is_ignored == True)
+                ),
+            ),
         )
     )
     oldest_date = oldest_result.scalar()
@@ -856,9 +878,15 @@ async def get_account_summary(
     # of the opening balance to avoid counting them twice (same convention as
     # net_pending_by_account used by the dashboard).
     if account.type != "credit_card" and date_from:
+        # ``current_balance`` is the provider's balance as of today. Use the
+        # same cutoff when walking backwards from it; date_to may be in the
+        # future (projected view) or before today (historical view), but it is
+        # not the as-of date of the provider balance.
+        balance_cutoff = today
         ob_base_filters = [
             Transaction.account_id == account_id,
             Transaction.date >= date_from,
+            Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
