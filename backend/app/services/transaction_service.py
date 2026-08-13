@@ -1230,6 +1230,15 @@ async def update_transaction(
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
     override_amount_primary = update_data.pop("amount_primary", None)
     override_fx_rate = update_data.pop("fx_rate_used", None)
+    heals_fx_on_post = (
+        transaction.status == "pending"
+        and update_data.get("status") == "posted"
+        and (
+            transaction.amount_primary is None
+            or transaction.fx_rate_used is None
+            or transaction.fx_rate_used == 1
+        )
+    )
 
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
@@ -1249,7 +1258,7 @@ async def update_transaction(
                 override_amount_primary,
                 override_fx_rate,
             )
-    elif needs_restamp:
+    elif needs_restamp or heals_fx_on_post:
         await stamp_primary_amount(session, user_id, transaction)
 
     # Refresh effective_date when the purchase date, account, or the manual

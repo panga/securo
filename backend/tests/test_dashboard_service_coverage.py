@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -330,6 +331,31 @@ async def test_projected_transactions_currency_conversion(session, test_user, te
     assert projections[0].amount_primary == pytest.approx(50.0, abs=1.0)
 
 
+@pytest.mark.asyncio
+async def test_projected_transactions_do_not_expose_fake_one_to_one(
+    session, test_user, test_workspace
+):
+    today = date.today()
+    month_start = today.replace(day=1)
+    session.add(RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        description="USD without rate", amount=Decimal("10"), type="debit",
+        frequency="monthly", currency="USD",
+        start_date=month_start, next_occurrence=month_start,
+    ))
+    await session.commit()
+
+    with patch(
+        "app.services.dashboard_service._resolve_rate",
+        new=AsyncMock(return_value=None),
+    ):
+        projections = await get_projected_transactions(
+            session, test_workspace.id, test_user.id, month=month_start
+        )
+
+    assert projections[0].amount_primary is None
+
+
 # ---------------------------------------------------------------------------
 # _daily_deltas multi-currency (914-925) + balance_history projection (979-985)
 # ---------------------------------------------------------------------------
@@ -442,9 +468,10 @@ async def test_monthly_trend(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_summary_current_month_projection_adjusts_balance(session, test_user, test_workspace):
-    """When viewing the current month with no balance_date, month_end > today
-    so recurring projections from today+1..month_end adjust total_balance."""
+async def test_summary_current_month_projection_only_adjusts_projected_balance(
+    session, test_user, test_workspace
+):
+    """Future recurring rows affect projected, never current, balance."""
     today = date.today()
     month_start = today.replace(day=1)
     # Only run when there's at least one future day in the month.
@@ -463,8 +490,8 @@ async def test_summary_current_month_projection_adjusts_balance(session, test_us
     await session.commit()
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
-    # Projected credits should push the BRL balance above the 1000 opening balance
-    assert summary.total_balance.get("BRL", 0) > 1000.0
+    assert summary.total_balance.get("BRL", 0) == 1000.0
+    assert summary.projected_balance.get("BRL", 0) > 1000.0
 
 
 @pytest.mark.asyncio

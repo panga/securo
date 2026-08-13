@@ -817,6 +817,38 @@ async def test_balance_history_basic(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
+async def test_future_balance_history_carries_pending_into_projected_opening(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Future balance", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    opening = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Opening", amount=Decimal("1000"),
+        currency="BRL", date=date.today(), type="credit", source="opening_balance",
+        status="posted",
+    )
+    pending = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Pending bill", amount=Decimal("100"),
+        currency="BRL", date=date.today(), type="debit", source="sync",
+        status="pending",
+    )
+    session.add_all([account, opening, pending])
+    await session.commit()
+
+    next_month = (date.today().replace(day=1) + timedelta(days=32)).replace(day=1)
+    history = await get_balance_history(
+        session, test_workspace.id, test_user.id,
+        month=next_month, account_ids=[account.id],
+    )
+
+    assert history.current[0].balance == 900.0
+
+
+@pytest.mark.asyncio
 async def test_balance_history_ignored_category_is_consistent_across_months(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -993,7 +1025,8 @@ async def test_get_summary_includes_recurring_projections(session, test_user, te
     await session.commit()
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
-    assert summary.monthly_income >= 10000.0
+    assert summary.monthly_income == pytest.approx(0.0)
+    assert summary.projected_income >= 10000.0
 
 
 # ---------------------------------------------------------------------------
