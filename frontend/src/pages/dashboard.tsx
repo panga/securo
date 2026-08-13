@@ -36,7 +36,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -52,6 +52,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
+import { shouldShowPendingBadge } from '@/lib/transaction-status'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -424,6 +425,7 @@ export default function DashboardPage() {
     parentOwnerName: string | null
     groupName: string | null
     isIgnored: boolean
+    showPendingBadge: boolean
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -470,7 +472,8 @@ export default function DashboardPage() {
         groupId,
         parentOwnerName: isShared ? tx.parent_owner_name ?? null : null,
         groupName: groupId ? groupNameById.get(groupId) ?? null : null,
-        isIgnored: tx.is_ignored
+        isIgnored: tx.is_ignored,
+        showPendingBadge: shouldShowPendingBadge(tx),
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -494,7 +497,8 @@ export default function DashboardPage() {
         groupId: null,
         parentOwnerName: null,
         groupName: null,
-        isIgnored: false
+        isIgnored: false,
+        showPendingBadge: false,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -1086,8 +1090,16 @@ export default function DashboardPage() {
                             </span>
                           )}
                           {row.isProjected && (
-                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
+                            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full shrink-0">
                               {t('transactions.recurringBadge')}
+                            </span>
+                          )}
+                          {row.showPendingBadge && (
+                            <span
+                              title={t('transactions.pending')}
+                              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                            >
+                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
                             </span>
                           )}
                           {row.isIgnored && (
@@ -1192,6 +1204,14 @@ export default function DashboardPage() {
                               {row.isProjected && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
                                   {t('transactions.recurringBadge')}
+                                </span>
+                              )}
+                              {row.showPendingBadge && (
+                                <span
+                                  title={t('transactions.pending')}
+                                  className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                                >
+                                  <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
                                 </span>
                               )}
                               {row.isIgnored && (
