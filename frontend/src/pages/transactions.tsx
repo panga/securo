@@ -40,10 +40,10 @@ import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, 
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
-import { hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
+import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
-import { TransactionDialog, extractApiError, type SaveAction } from '@/components/transaction-dialog'
+import { TransactionDialog, extractApiError, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { TransactionsColumnPicker } from '@/components/transactions-column-picker'
 import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
@@ -70,13 +70,6 @@ type PendingTransferCategoryUpdate = {
   id: string
   data: TransactionUpdatePayload
 }
-
-// A deferred installment-series edit or delete waiting for the
-// user to pick the scope (this / future / all) before it fires.
-type PendingSeriesScopeAction =
-  | { kind: 'edit'; id: string; data: TransactionUpdatePayload }
-  | { kind: 'delete'; id: string }
-  | null
 
 function parseHashtags(notes: string | null): string[] {
   if (!notes) return []
@@ -143,11 +136,9 @@ export default function TransactionsPage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [pendingTransferCategoryUpdate, setPendingTransferCategoryUpdate] =
     useState<PendingTransferCategoryUpdate | null>(null)
-  // Manual installment-series scoped edit/delete: when the target row belongs
-  // to a manually created multi-installment series the user is asked whether
-  // to touch just this row, this + later installments, or the whole series.
-  const [pendingSeriesScopeAction, setPendingSeriesScopeAction] =
-    useState<PendingSeriesScopeAction | null>(null)
+  // Manual installment-series scoped delete. Scoped edits are handled by the
+  // shared TransactionDialog so account detail and dashboard behave the same.
+  const [pendingSeriesDeleteId, setPendingSeriesDeleteId] = useState<string | null>(null)
   const [formResetKey, setFormResetKey] = useState(0)
   const [duplicateDraft, setDuplicateDraft] = useState<TransactionEditPayload | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => (
@@ -855,7 +846,7 @@ export default function TransactionsPage() {
   }
 
   const handleTransactionSave = (
-    data: TransactionEditPayload,
+    data: TransactionSavePayload,
     recurringData?: { frequency: string; end_date?: string },
     installmentData?: InstallmentSeriesInput,
     pendingFiles?: File[],
@@ -876,30 +867,13 @@ export default function TransactionsPage() {
       return
     }
 
-    // Editing one row of a manual multi-installment series — ask the
-    // user whether the change applies to this, this+future, or all rows.
-    // Status-only changes apply to the single row, so skip the prompt.
-    if (isManualInstallmentSeriesRow(editingTx)) {
-      if (!hasNonStatusChange(data, editingTx)) {
-        updateMutation.mutate({ id: editingTx.id, ...data })
-        return
-      }
-      setPendingSeriesScopeAction({ kind: 'edit', id: editingTx.id, data })
-      return
-    }
-
     updateMutation.mutate({ id: editingTx.id, ...data })
   }
 
-  const submitPendingSeriesScopeAction = (scope: TransactionApplyScope) => {
-    const pending = pendingSeriesScopeAction
-    if (!pending) return
-    if (pending.kind === 'edit') {
-      updateMutation.mutate({ id: pending.id, ...pending.data, apply_to: scope })
-    } else {
-      deleteMutation.mutate({ id: pending.id, applyTo: scope })
-    }
-    setPendingSeriesScopeAction(null)
+  const submitPendingSeriesDelete = (scope: TransactionApplyScope) => {
+    if (!pendingSeriesDeleteId) return
+    deleteMutation.mutate({ id: pendingSeriesDeleteId, applyTo: scope })
+    setPendingSeriesDeleteId(null)
   }
 
   // Open the Add Transaction dialog seeded from an existing row's
@@ -1980,7 +1954,7 @@ export default function TransactionsPage() {
           if (isManualInstallmentSeriesRow(editingTx)) {
             // Deleting one row of a manual series — ask the user
             // whether to drop this, this+future, or all installments.
-            setPendingSeriesScopeAction({ kind: 'delete', id: editingTx.id })
+            setPendingSeriesDeleteId(editingTx.id)
           } else {
             deleteMutation.mutate({ id: editingTx.id })
           }
@@ -2039,12 +2013,12 @@ export default function TransactionsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Installment-series scope prompt: editing or deleting
-          one row of a multi-installment series asks how far to apply it. */}
+      {/* Installment-series delete scope. Edit scope is handled by the shared
+          TransactionDialog so every edit surface behaves consistently. */}
       <Dialog
-        open={!!pendingSeriesScopeAction}
+        open={!!pendingSeriesDeleteId}
         onOpenChange={(open) => {
-          if (!open) setPendingSeriesScopeAction(null)
+          if (!open) setPendingSeriesDeleteId(null)
         }}
       >
         <DialogContent>
@@ -2052,14 +2026,12 @@ export default function TransactionsPage() {
             <DialogTitle>{t('transactions.installmentScopeTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {pendingSeriesScopeAction?.kind === 'delete'
-              ? t('transactions.installmentScopeDeleteDesc')
-              : t('transactions.installmentScopeEditDesc')}
+            {t('transactions.installmentScopeDeleteDesc')}
           </p>
           <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
             <Button
               autoFocus
-              onClick={() => submitPendingSeriesScopeAction('this')}
+              onClick={() => submitPendingSeriesDelete('this')}
               disabled={updateMutation.isPending || deleteMutation.isPending}
               className="justify-center"
             >
@@ -2069,7 +2041,7 @@ export default function TransactionsPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => submitPendingSeriesScopeAction('future')}
+              onClick={() => submitPendingSeriesDelete('future')}
               disabled={updateMutation.isPending || deleteMutation.isPending}
               className="justify-center"
             >
@@ -2077,7 +2049,7 @@ export default function TransactionsPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => submitPendingSeriesScopeAction('all')}
+              onClick={() => submitPendingSeriesDelete('all')}
               disabled={updateMutation.isPending || deleteMutation.isPending}
               className="justify-center"
             >

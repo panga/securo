@@ -42,12 +42,24 @@ import { CategorySelect } from '@/components/category-select'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
-import { buildInstallmentSeriesInput } from '@/lib/installment-series'
+import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, CategoryGroup, Category, Rule, RuleCondition } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
+
+export type TransactionSavePayload = TransactionEditPayload & {
+  apply_to?: TransactionApplyScope
+}
+
+type PendingInstallmentEdit = {
+  data: TransactionEditPayload
+  recurringData?: { frequency: string; end_date?: string }
+  installmentData?: InstallmentSeriesInput
+  pendingFiles?: File[]
+  action?: SaveAction
+}
 
 export function extractApiError(error: unknown): string {
   if (
@@ -111,7 +123,7 @@ export function TransactionDialog({
   categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string; display_name?: string | null; type?: string }[]
   recurringMatch?: RecurringTransaction
-  onSave: (data: TransactionEditPayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
+  onSave: (data: TransactionSavePayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
   onUnlinkTransfer?: (pairId: string) => void
   onIgnoreChanged?: () => void
@@ -124,6 +136,8 @@ export function TransactionDialog({
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<AttachmentPreview | null>(null)
+  const [pendingInstallmentEdit, setPendingInstallmentEdit] =
+    useState<PendingInstallmentEdit | null>(null)
 
   const handlePreviewChange = useCallback((newPreview: AttachmentPreview | null) => {
     setPreview(prev => {
@@ -161,8 +175,39 @@ export function TransactionDialog({
   const isEditing = !!transaction
   const hasPreview = isEditing && !!preview
 
+  const handleClose = () => {
+    setPendingInstallmentEdit(null)
+    onClose()
+  }
+
+  const handleSave = (
+    data: TransactionEditPayload,
+    recurringData?: { frequency: string; end_date?: string },
+    installmentData?: InstallmentSeriesInput,
+    pendingFiles?: File[],
+    action?: SaveAction,
+  ) => {
+    if (
+      transaction &&
+      isManualInstallmentSeriesRow(transaction) &&
+      hasNonStatusChange(data, transaction)
+    ) {
+      setPendingInstallmentEdit({ data, recurringData, installmentData, pendingFiles, action })
+      return
+    }
+    onSave(data, recurringData, installmentData, pendingFiles, action)
+  }
+
+  const submitInstallmentEdit = (scope: TransactionApplyScope) => {
+    if (!pendingInstallmentEdit) return
+    const { data, recurringData, installmentData, pendingFiles, action } = pendingInstallmentEdit
+    onSave({ ...data, apply_to: scope }, recurringData, installmentData, pendingFiles, action)
+    setPendingInstallmentEdit(null)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className={cn(
         // Bound the dialog to the viewport (dvh accounts for mobile browser
         // chrome) and make it a flex column so the inner scroll region works
@@ -190,12 +235,12 @@ export function TransactionDialog({
               categoryGroups={categoryGroups}
               accounts={accounts}
               recurringMatch={recurringMatch}
-              onSave={onSave}
+              onSave={handleSave}
               onDelete={onDelete}
               onUnlinkTransfer={onUnlinkTransfer}
               onIgnoreChanged={onIgnoreChanged}
               onCreateRule={onCreateRule}
-              onCancel={onClose}
+              onCancel={handleClose}
               loading={loading}
               error={error}
               isSynced={isSynced}
@@ -298,6 +343,49 @@ export function TransactionDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={!!pendingInstallmentEdit}
+      onOpenChange={(scopeOpen) => {
+        if (!scopeOpen) setPendingInstallmentEdit(null)
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('transactions.installmentScopeTitle')}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {t('transactions.installmentScopeEditDesc')}
+        </p>
+        <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
+          <Button
+            autoFocus
+            onClick={() => submitInstallmentEdit('this')}
+            disabled={loading}
+            className="justify-center"
+          >
+            {loading ? t('common.loading') : t('transactions.installmentScopeThis')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => submitInstallmentEdit('future')}
+            disabled={loading}
+            className="justify-center"
+          >
+            {t('transactions.installmentScopeFuture')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => submitInstallmentEdit('all')}
+            disabled={loading}
+            className="justify-center"
+          >
+            {t('transactions.installmentScopeAll')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

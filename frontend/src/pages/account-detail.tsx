@@ -9,12 +9,12 @@ import { accounts, transactions, categories as categoriesApi, categoryGroups as 
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
-import type { CreditCardBill, Transaction, TransactionEditPayload } from '@/types'
+import type { CreditCardBill, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog, extractApiError, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -532,7 +532,7 @@ export default function AccountDetailPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id: txId, ...data }: TransactionEditPayload & { id: string }) =>
+    mutationFn: ({ id: txId, ...data }: TransactionSavePayload & { id: string }) =>
       transactions.update(txId, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
