@@ -139,7 +139,27 @@ export function resolveDateLocale(
 }
 
 /**
+ * Build a currency formatter, falling back to a known-good locale *and*
+ * currency. A malformed locale throws just like a malformed currency code
+ * does, and `useDisplayLocale` can surface one (i18next reads `?lng=` from
+ * the querystring), so the fallback has to replace both.
+ */
+function currencyFormatter(currency: string, locale: string): Intl.NumberFormat {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currency || 'USD',
+    })
+  } catch {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+  }
+}
+
+/**
  * Format a numeric value as currency using Intl.NumberFormat.
+ *
+ * Fraction digits are left to Intl so each currency keeps its own precision:
+ * pinning two would render JPY as "￥1,000.00" and CLP as "$1.000,00".
  */
 export function formatCurrency(
   value: number | null | undefined,
@@ -147,21 +167,10 @@ export function formatCurrency(
   locale = 'en-US',
 ): string {
   if (value == null) return '—'
-  // Normalize -0 to 0 so we never render "-R$ 0,00" / "-$0.00"
-  const v = Object.is(value, -0) ? 0 : value
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currency || 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(v)
-  } catch {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(v)
-  }
+  const formatter = currencyFormatter(currency, locale)
+  // Anything that rounds to zero at the currency's own precision would render
+  // with a stray minus ("-R$ 0,00"), which covers -0 as well as the sub-cent
+  // residue that summed balances and FX conversions leave behind.
+  const factor = 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2)
+  return formatter.format(Math.round(value * factor) === 0 ? 0 : value)
 }
