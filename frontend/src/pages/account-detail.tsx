@@ -45,8 +45,7 @@ function defaultFrom() {
 }
 
 function defaultTo() {
-  const now = new Date()
-  return localDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  return localDateString()
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -1444,6 +1443,9 @@ export default function AccountDetailPage() {
                       onSelect={() => {}}
                       showPayee
                       onClick={(clickedTx) => {
+                        // The opening-balance row is synthetic; the desktop
+                        // table makes it non-clickable and mobile must match.
+                        if (clickedTx.source === 'opening_balance') return
                         if (!clickedTx.is_shared && canWrite) {
                           setEditingTx(clickedTx)
                           setDialogOpen(true)
