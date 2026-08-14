@@ -651,6 +651,7 @@
     "income": "Przychody",
     "expenses": "Wydatki",
     "projectedBalance": "Saldo prognozowane",
+    "projectedBalanceDelta": "{{amount}} jeszcze nierozliczone",
     "projectedIncome": "Prognozowane przychody",
     "projectedExpenses": "Prognozowane wydatki",
     "thisMonth": "Bieżący miesiąc",

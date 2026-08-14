@@ -731,6 +731,7 @@ async def get_spending_by_category(
             "icon": row[2] or "circle-help",
             "color": row[3] or "#6B7280",
             "total": abs(float(row[4] or 0)),
+            "projected": 0.0,
         }
 
     # Subtract non-owner shares per category — owner-side splits should
@@ -789,6 +790,7 @@ async def get_spending_by_category(
                     "icon": meta["icon"],
                     "color": meta["color"],
                     "total": share_total,
+                    "projected": 0.0,
                 }
 
     # Add virtual recurring projections (debit only), converted to primary currency
@@ -820,14 +822,15 @@ async def get_spending_by_category(
         proj_amount_float = float(proj_amount)
 
         if cat_id in spending_map:
-            spending_map[cat_id]["total"] += proj_amount_float
+            spending_map[cat_id]["projected"] += proj_amount_float
         else:
             info = cat_cache.get(cat_id, {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"})
             spending_map[cat_id] = {
                 "name": info["name"],
                 "icon": info["icon"],
                 "color": info["color"],
-                "total": proj_amount_float,
+                "total": 0.0,
+                "projected": proj_amount_float,
             }
 
     # Pending and future-dated real transactions are forecast rows. They are
@@ -860,15 +863,17 @@ async def get_spending_by_category(
             )
             projected_amount = float(amount)
         if cat_id in spending_map:
-            spending_map[cat_id]["total"] += projected_amount
+            spending_map[cat_id]["projected"] += projected_amount
         else:
             info = cat_cache.get(
                 cat_id,
                 {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
             )
-            spending_map[cat_id] = {**info, "total": projected_amount}
+            spending_map[cat_id] = {**info, "total": 0.0, "projected": projected_amount}
 
-    # Convert to list and compute percentages
+    # `total` stays posted-only so the breakdown adds up to the expenses card,
+    # which is also posted-only. The forecast rides along in `projected_total`
+    # (actual + forecast) for callers that want the same split the card shows.
     grand_total = sum(entry["total"] for entry in spending_map.values())
     spending = []
     for cat_id, entry in sorted(spending_map.items(), key=lambda x: x[1]["total"], reverse=True):
@@ -878,6 +883,7 @@ async def get_spending_by_category(
             category_icon=entry["icon"],
             category_color=entry["color"],
             total=entry["total"],
+            projected_total=entry["total"] + entry.get("projected", 0.0),
             percentage=(entry["total"] / grand_total * 100) if grand_total else 0,
         ))
 

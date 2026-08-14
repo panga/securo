@@ -1249,6 +1249,16 @@ export default function AccountDetailPage() {
             <p className={`text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums ${projectedBalance < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
               {mask(formatCurrency(projectedBalance, displayCurrency, locale))}
             </p>
+            {/* Naming the gap keeps the two cards from reading as a
+                contradiction: the forecast is the current balance plus the
+                money that has not settled yet. */}
+            {Math.abs(projectedBalance - totalBalance) > 0.005 && (
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
+                {t('accounts.projectedBalanceDelta', {
+                  amount: mask(formatCurrency(projectedBalance - totalBalance, displayCurrency, locale)),
+                })}
+              </p>
+            )}
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
             <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">

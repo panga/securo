@@ -285,6 +285,14 @@ async def generate_pending(
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
             else:
+                # Materialized only once the occurrence is due (the loop breaks
+                # above while `effective_occurrence > cutoff`), so this is a
+                # charge that already happened, not a forecast. Leaving it
+                # "pending" would keep it out of every actual figure with no
+                # path back: only a synced charge merging in flips a row to
+                # posted, so on a manual account the balance would stop moving.
+                # Occurrences that have not come due are forecast and stay in
+                # the projection layer instead of being written here.
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=recurring.account_id,
@@ -295,7 +303,6 @@ async def generate_pending(
                     date=effective_occurrence,
                     type=recurring.type,
                     source="recurring",
-                    status="pending",
                     recurring_transaction_id=recurring.id,
                 )
                 account = await session.get(Account, recurring.account_id)

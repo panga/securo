@@ -1125,7 +1125,10 @@ async def test_spending_by_category_includes_recurring(session, test_user, test_
     assert len(spending) >= 1
     transport = next((s for s in spending if s.category_name == "Transport"), None)
     assert transport is not None
-    assert transport.total >= 200.0
+    # Recurring projections are forecast: they live in projected_total so the
+    # posted-only `total` keeps matching the expenses card.
+    assert transport.total == 0.0
+    assert transport.projected_total >= 200.0
 
 
 # ---------------------------------------------------------------------------

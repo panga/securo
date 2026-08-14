@@ -36,7 +36,10 @@ class SpendingByCategory(BaseModel):
     category_name: str
     category_icon: str
     category_color: str
+    # Posted-only, so the breakdown sums to the expenses card.
     total: float
+    # Actual plus forecast, mirroring the card's projected sub-line.
+    projected_total: float = 0.0
     percentage: float
 
 

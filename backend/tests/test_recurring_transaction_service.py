@@ -571,7 +571,10 @@ async def test_generate_pending(session: AsyncSession, test_user, test_workspace
     )
     txns = result.scalars().all()
     assert len(txns) == 3
-    assert {tx.status for tx in txns} == {"pending"}
+    # Only occurrences that already came due are materialized, so they are
+    # actuals. Marking them pending would keep them out of every current
+    # figure with no way back on an account that never syncs.
+    assert {tx.status for tx in txns} == {"posted"}
 
     # next_occurrence should be advanced past cutoff
     await session.refresh(rec)

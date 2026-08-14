@@ -140,7 +140,8 @@ async def test_dashboard_virtual_recurring_projection(
     )
     assert cat_spending is not None
     # At least 4 weekly occurrences in a month = at least 200
-    assert cat_spending["total"] >= 200.0
+    assert cat_spending["total"] == 0.0
+    assert cat_spending["projected_total"] >= 200.0
 
     # CRITICAL: No transactions should have been created in the DB (virtual projection)
     # Compute the last day of next month for the query range
@@ -265,7 +266,8 @@ async def test_recurring_projection_respects_end_date(
         (s for s in spending_resp.json() if s["category_id"] == str(test_categories[0].id)), None
     )
     assert cat_spending is not None
-    assert cat_spending["total"] == 60.0
+    assert cat_spending["total"] == 0.0
+    assert cat_spending["projected_total"] == 60.0
 
 
 @pytest.mark.asyncio
