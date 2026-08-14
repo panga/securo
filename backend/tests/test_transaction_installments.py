@@ -431,6 +431,86 @@ async def test_update_installment_all(
 
 
 @pytest.mark.asyncio
+async def test_update_installment_amount_all_resyncs_series_total(
+    session: AsyncSession, test_user, test_workspace, installment_account
+):
+    """Repricing the whole series updates the stored total on every parcel."""
+    series = await create_installment_series(
+        session, test_workspace.id, test_user.id,
+        _series_payload(installment_account, installments=3),
+    )
+    assert all(t.installment_total_amount == Decimal("300.00") for t in series)
+
+    await update_transaction(
+        session, series[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("150.00"), apply_to="all"),
+    )
+
+    for tx in series:
+        reloaded = await get_transaction(session, tx.id, test_workspace.id)
+        assert reloaded is not None
+        assert reloaded.amount == Decimal("150.00")
+        assert reloaded.installment_total_amount == Decimal("450.00")
+
+
+@pytest.mark.asyncio
+async def test_update_installment_amount_this_only_resyncs_series_total(
+    session: AsyncSession, test_user, test_workspace, installment_account
+):
+    """Repricing a single parcel still changes what the series is worth."""
+    series = await create_installment_series(
+        session, test_workspace.id, test_user.id,
+        _series_payload(installment_account, installments=3),
+    )
+
+    await update_transaction(
+        session, series[1].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("200.00")),
+    )
+
+    amounts = []
+    for tx in series:
+        reloaded = await get_transaction(session, tx.id, test_workspace.id)
+        assert reloaded is not None
+        amounts.append(reloaded.amount)
+        # 100 + 200 + 100
+        assert reloaded.installment_total_amount == Decimal("400.00")
+    assert amounts == [Decimal("100.00"), Decimal("200.00"), Decimal("100.00")]
+
+
+@pytest.mark.asyncio
+async def test_update_installment_amount_leaves_synced_total_alone(
+    session: AsyncSession, test_user, test_workspace, installment_account
+):
+    """Provider-synced rows have no series id: their total is the bank's
+    figure and must not be recomputed from our side."""
+    rows = [
+        _transaction(
+            installment_account,
+            workspace_id=test_workspace.id,
+            source="sync",
+            installment_number=i,
+            total_installments=2,
+            installment_total_amount=Decimal("200.00"),
+            installment_purchase_date=date(2026, 1, 15),
+        )
+        for i in (1, 2)
+    ]
+    session.add_all(rows)
+    await session.commit()
+
+    await update_transaction(
+        session, rows[0].id, test_workspace.id, test_user.id,
+        TransactionUpdate(amount=Decimal("175.00")),
+    )
+
+    for tx in rows:
+        reloaded = await get_transaction(session, tx.id, test_workspace.id)
+        assert reloaded is not None
+        assert reloaded.installment_total_amount == Decimal("200.00")
+
+
+@pytest.mark.asyncio
 async def test_update_installment_scope_repeats_only_whitelist_fields(
     session: AsyncSession, test_user, test_workspace, installment_account
 ):

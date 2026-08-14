@@ -98,9 +98,9 @@ describe('buildInstallmentSeriesInput', () => {
 })
 
 describe('isManualInstallmentSeriesRow', () => {
-  it('recognizes multi-installment rows created manually', () => {
+  it('recognizes multi-installment rows created by the series endpoint', () => {
     expect(isManualInstallmentSeriesRow({
-      source: 'manual',
+      installment_series_id: 'series-1',
       installment_number: 2,
       total_installments: 3,
     })).toBe(true)
@@ -108,20 +108,30 @@ describe('isManualInstallmentSeriesRow', () => {
 
   it('does not recognize bank-synced installment rows', () => {
     expect(isManualInstallmentSeriesRow({
-      source: 'sync',
+      installment_series_id: null,
       installment_number: 2,
       total_installments: 3,
     })).toBe(false)
   })
 
+  it('keeps recognizing a parcel that bank sync absorbed', () => {
+    // The fuzzy manual match flips `source` to "sync" but leaves the series
+    // id, so the scope prompt must not vanish for that parcel.
+    expect(isManualInstallmentSeriesRow({
+      installment_series_id: 'series-1',
+      installment_number: 1,
+      total_installments: 3,
+    })).toBe(true)
+  })
+
   it('does not recognize single-parcel or incomplete installment metadata', () => {
     expect(isManualInstallmentSeriesRow({
-      source: 'manual',
+      installment_series_id: 'series-1',
       installment_number: 1,
       total_installments: 1,
     })).toBe(false)
     expect(isManualInstallmentSeriesRow({
-      source: 'manual',
+      installment_series_id: 'series-1',
       installment_number: null,
       total_installments: 3,
     })).toBe(false)

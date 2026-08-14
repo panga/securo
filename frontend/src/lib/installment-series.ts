@@ -32,12 +32,20 @@ export interface InstallmentSeriesFormInput {
  * manual installment endpoint. Provider-synced rows may carry installment
  * metadata, but they are independent bank transactions and must be edited
  * or deleted one at a time.
+ *
+ * The series id is the signal, not `source`: bank sync absorbs a matching
+ * manual row by flipping its `source` to "sync" (connection_service's fuzzy
+ * manual match), which would otherwise make the prompt disappear from part
+ * of a series after the first sync. The series id survives that merge.
  */
 export function isManualInstallmentSeriesRow(
-  tx: Pick<Transaction, 'source' | 'installment_number' | 'total_installments'> | null | undefined,
+  tx:
+    | Pick<Transaction, 'installment_series_id' | 'installment_number' | 'total_installments'>
+    | null
+    | undefined,
 ): boolean {
   return (
-    tx?.source === 'manual' &&
+    tx?.installment_series_id != null &&
     tx.installment_number != null &&
     tx.total_installments != null &&
     tx.total_installments > 1

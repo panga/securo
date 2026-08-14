@@ -1326,6 +1326,33 @@ async def _get_series_transactions(
     return list(result.scalars().all())
 
 
+async def _resync_installment_series_total(
+    session: AsyncSession, workspace_id: uuid.UUID, tx: Transaction
+) -> None:
+    """Keep ``installment_total_amount`` equal to the sum of the parcels.
+
+    Editing a parcel's amount (with any scope) changes what the series is
+    worth, and the stored total is what the transaction list renders in its
+    installment tooltip. Only series carrying a series id are recomputed:
+    for provider-synced rows the total is the bank's own figure and must
+    stay as reported.
+    """
+    if tx.installment_series_id is None:
+        return
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.installment_series_id == tx.installment_series_id,
+        )
+    )
+    siblings = list(result.scalars().all())
+    if not siblings:
+        return
+    total = sum((row.amount for row in siblings), Decimal("0"))
+    for row in siblings:
+        row.installment_total_amount = total
+
+
 async def _apply_update_to_row(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -1528,6 +1555,13 @@ async def update_transaction(
             apply_to_transfer_pair,
             row_splits,
         )
+
+    # A changed parcel amount makes the stored series total stale, whatever
+    # the scope was: "this" reprices one parcel, "future"/"all" reprice
+    # several. Recompute from the rows themselves so the two always agree.
+    if "amount" in update_data and _is_installment(transaction):
+        await session.flush()
+        await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits"])
