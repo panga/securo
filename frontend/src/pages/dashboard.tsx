@@ -43,7 +43,7 @@ import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog, extractApiError, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -244,7 +244,7 @@ export default function DashboardPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<Transaction> & { id: string }) =>
+    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string }) =>
       transactions.update(id, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -425,6 +425,8 @@ export default function DashboardPage() {
     parentOwnerName: string | null
     groupName: string | null
     isIgnored: boolean
+    installmentNumber: number | null
+    totalInstallments: number | null
     showPendingBadge: boolean
   }
 
@@ -473,6 +475,8 @@ export default function DashboardPage() {
         parentOwnerName: isShared ? tx.parent_owner_name ?? null : null,
         groupName: groupId ? groupNameById.get(groupId) ?? null : null,
         isIgnored: tx.is_ignored,
+        installmentNumber: tx.installment_number,
+        totalInstallments: tx.total_installments,
         showPendingBadge: shouldShowPendingBadge(tx),
       })
     }
@@ -498,6 +502,8 @@ export default function DashboardPage() {
         parentOwnerName: null,
         groupName: null,
         isIgnored: false,
+        installmentNumber: null,
+        totalInstallments: null,
         showPendingBadge: false,
       })
     }
@@ -1094,6 +1100,11 @@ export default function DashboardPage() {
                               {t('transactions.recurringBadge')}
                             </span>
                           )}
+                          {row.installmentNumber != null && row.totalInstallments != null && (
+                            <span className="inline-flex items-center text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
+                              {row.installmentNumber}/{row.totalInstallments}
+                            </span>
+                          )}
                           {row.showPendingBadge && (
                             <span
                               title={t('transactions.pending')}
@@ -1204,6 +1215,11 @@ export default function DashboardPage() {
                               {row.isProjected && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
                                   {t('transactions.recurringBadge')}
+                                </span>
+                              )}
+                              {row.installmentNumber != null && row.totalInstallments != null && (
+                                <span className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0">
+                                  {row.installmentNumber}/{row.totalInstallments}
                                 </span>
                               )}
                               {row.showPendingBadge && (

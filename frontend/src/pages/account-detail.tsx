@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog, extractApiError, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -537,7 +537,7 @@ export default function AccountDetailPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id: txId, ...data }: Partial<Transaction> & { id: string }) =>
+    mutationFn: ({ id: txId, ...data }: TransactionSavePayload & { id: string }) =>
       transactions.update(txId, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
