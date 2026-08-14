@@ -157,6 +157,8 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= date.today(),
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(Transaction.currency)
@@ -235,6 +237,8 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= date.today(),
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(Transaction.category_id, Transaction.currency)
@@ -317,6 +321,8 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= date.today(),
+            Transaction.status == "posted",
             counts_as_pnl(),
         )
         .group_by(Transaction.currency)
@@ -394,6 +400,8 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
+            date_col <= date.today(),
+            Transaction.status == "posted",
             counts_as_pnl(),
         )
         .group_by(Transaction.category_id, Transaction.currency)

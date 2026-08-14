@@ -571,6 +571,7 @@ async def test_generate_pending(session: AsyncSession, test_user, test_workspace
     )
     txns = result.scalars().all()
     assert len(txns) == 3
+    assert {tx.status for tx in txns} == {"pending"}
 
     # next_occurrence should be advanced past cutoff
     await session.refresh(rec)
