@@ -618,7 +618,7 @@
     "income": "Доход",
     "expenses": "Расходы",
     "projectedBalance": "Прогнозируемый баланс",
-    "projectedBalanceDelta": "{{amount}} ещё не проведено",
+    "notSettled": "Не проведено",
     "projectedIncome": "Прогнозируемый доход",
     "projectedExpenses": "Прогнозируемые расходы",
     "thisMonth": "Этот месяц",

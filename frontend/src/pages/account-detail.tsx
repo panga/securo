@@ -1251,12 +1251,11 @@ export default function AccountDetailPage() {
             </p>
             {/* Naming the gap keeps the two cards from reading as a
                 contradiction: the forecast is the current balance plus the
-                money that has not settled yet. */}
+                money that has not settled yet. Same "label: value" shape as
+                the projected income/expense sub-lines beside it. */}
             {Math.abs(projectedBalance - totalBalance) > 0.005 && (
               <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
-                {t('accounts.projectedBalanceDelta', {
-                  amount: mask(formatCurrency(projectedBalance - totalBalance, displayCurrency, locale)),
-                })}
+                {t('accounts.notSettled')}: {mask(formatCurrency(Math.abs(projectedBalance - totalBalance), displayCurrency, locale))}
               </p>
             )}
           </div>

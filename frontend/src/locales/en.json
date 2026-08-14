@@ -612,7 +612,7 @@
     "income": "Income",
     "expenses": "Expenses",
     "projectedBalance": "Projected Balance",
-    "projectedBalanceDelta": "{{amount}} not settled yet",
+    "notSettled": "Not settled",
     "projectedIncome": "Projected Income",
     "projectedExpenses": "Projected Expenses",
     "thisMonth": "This month",

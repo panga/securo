@@ -612,7 +612,7 @@
     "income": "Revenus",
     "expenses": "Dépenses",
     "projectedBalance": "Solde projeté",
-    "projectedBalanceDelta": "{{amount}} pas encore réglé",
+    "notSettled": "Non réglé",
     "projectedIncome": "Revenus projetés",
     "projectedExpenses": "Dépenses projetées",
     "thisMonth": "Ce mois-ci",

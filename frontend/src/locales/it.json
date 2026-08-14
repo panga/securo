@@ -612,7 +612,7 @@
     "income": "Entrate",
     "expenses": "Spese",
     "projectedBalance": "Saldo previsto",
-    "projectedBalanceDelta": "{{amount}} non ancora liquidato",
+    "notSettled": "Non liquidato",
     "projectedIncome": "Entrate previste",
     "projectedExpenses": "Spese previste",
     "thisMonth": "Questo mese",
