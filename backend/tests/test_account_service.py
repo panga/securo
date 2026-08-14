@@ -794,8 +794,10 @@ async def test_get_account_summary_excludes_pending_non_cc(session: AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_get_account_summary_excludes_pending_for_credit_card(session: AsyncSession, test_user, test_workspace):
-    """Manual credit card accounts also keep pending out of current_balance."""
+async def test_get_account_summary_keeps_pending_for_credit_card(session: AsyncSession, test_user, test_workspace):
+    """A card's balance is the debt owed, and an authorized purchase is
+    already owed. Keeping pending out would make the balance disagree with
+    the card's own bill total, which includes it."""
     account = await _make_account(session, test_user.id, "Summary CC", acc_type="credit_card")
     today = date.today()
     await _add_txn(
@@ -806,8 +808,9 @@ async def test_get_account_summary_excludes_pending_for_credit_card(session: Asy
 
     summary = await get_account_summary(session, account.id, test_workspace.id)
     assert summary is not None
-    # Pending belongs to the forecast: current remains the posted 100.
-    assert summary["current_balance"] == pytest.approx(100.0)
+    # 100 opening minus the 20 authorized purchase.
+    assert summary["current_balance"] == pytest.approx(80.0)
+    # P&L still waits for the charge to settle.
     assert summary["monthly_expenses"] == pytest.approx(0.0)
     assert summary["projected_expenses"] == pytest.approx(20.0)
 

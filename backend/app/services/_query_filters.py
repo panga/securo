@@ -11,8 +11,46 @@ from typing import Optional
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
+
+
+def is_confirmed():
+    """SQL filter: the charge is settled rather than merely authorized.
+
+    One of the two independent axes a transaction sits on. This one is about
+    *confirmation*: a pending row is real money already committed, it just
+    has not cleared yet. It says nothing about when the row is dated.
+    """
+    return Transaction.status == "posted"
+
+
+def is_not_future(as_of: date):
+    """SQL filter: the transaction has already happened by ``as_of``.
+
+    The other axis, and a pure date question. A future-dated row is forecast
+    no matter how confirmed it is; a past-dated row has happened no matter
+    whether the bank has cleared it.
+    """
+    return Transaction.date <= as_of
+
+
+def counts_in_current_balance(as_of: date):
+    """SQL filter: the row belongs in the balance labelled "current".
+
+    Composed from the two axes above so the definition lives in one place and
+    moving the line later is a change here rather than at every query site.
+
+    Today the line sits at "confirmed and not future", with one exception:
+    a credit card's balance is the debt owed, and an authorized purchase is
+    already owed, so pending card rows stay in. Without that carve-out the
+    card's balance understates the debt while its own bill total includes it.
+    """
+    return and_(
+        is_not_future(as_of),
+        or_(is_confirmed(), Account.type == "credit_card"),
+    )
 
 
 def reporting_date_col(accounting_mode: str):

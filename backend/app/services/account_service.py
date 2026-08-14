@@ -12,7 +12,12 @@ from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
-from app.services._query_filters import counts_as_pnl
+from app.services._query_filters import (
+    counts_as_pnl,
+    counts_in_current_balance,
+    is_confirmed,
+    is_not_future,
+)
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
 from app.models.category import Category
 
@@ -64,8 +69,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
-            Transaction.date <= today,
-            Transaction.status == "posted",
+            counts_in_current_balance(today),
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -682,8 +686,11 @@ async def get_account_summary(
                 )
             ).where(
                 Transaction.account_id == account_id,
-                Transaction.date <= today,
-                Transaction.status == "posted",
+                is_not_future(today),
+                # Same carve-out as the accounts list: a card's balance is the
+                # debt owed and an authorized purchase is already owed. The
+                # account is loaded here, so branch in Python rather than SQL.
+                *([] if account.type == "credit_card" else [is_confirmed()]),
                 Transaction.is_ignored == False,
                 or_(
                     Transaction.category_id.is_(None),
