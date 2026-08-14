@@ -257,7 +257,10 @@ async def get_summary(
 
     # For current/future months, project the balance by adding recurring
     # projections and real forecast rows from cutoff+1 through month_end.
-    if month_end > cutoff:
+    # A month that has already elapsed has no forecast: `cutoff` is its own
+    # last day there, so `month_end > cutoff` alone would still let the whole
+    # pending backlog land on a month that is already history.
+    if month_end > cutoff and month_end > today:
         projection_start = cutoff + timedelta(days=1)
         balance_projections = await _get_recurring_projections(
             session,
@@ -1025,6 +1028,11 @@ async def get_projected_transactions(
 
     A date range is inclusive at the API boundary. It is useful for Account
     Detail, while the month argument remains the compact dashboard contract.
+
+    Transfer-like rules stay in: this lists upcoming movements rather than
+    P&L, and an investment contribution is money that will leave the account.
+    The P&L-shaped callers exclude them on their own side, through
+    ``_get_recurring_projections(include_transfer_like=False)``.
     """
     if (from_date is None) != (to_date is None):
         raise ValueError("from_date and to_date must be provided together")

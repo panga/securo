@@ -1385,15 +1385,23 @@ export default function AccountDetailPage() {
       {(() => {
         const cycleEmpty = isCreditCard && chartData.length > 0 && chartData[chartData.length - 1].balance === 0
         const balances = chartData.map(d => d.balance)
-        const chartMin = Math.min(0, ...balances)
-        const chartMax = Math.max(0, ...balances)
         const dataMin = balances.length > 0 ? Math.min(...balances) : 0
         const dataMax = balances.length > 0 ? Math.max(...balances) : 0
-        const flat = chartMin === chartMax
-        const zeroFrac = flat
+        const flat = dataMin === 0 && dataMax === 0
+        // The Y axis rounds its bounds outward to hundreds and the area path
+        // is drawn down to that rounded floor, so the fill's gradient box
+        // spans the axis domain, not the data. Deriving the zero split from
+        // the data would put the colour flip at the wrong height: for a
+        // series of [-680, 105] the real zero sits at 22% of the domain while
+        // the data ratio says 13%. Keep both in step with the axis below.
+        const domainMin = dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0
+        const domainMax = dataMax === 0 ? 100 : Math.ceil(dataMax / 100) * 100
+        const zeroFrac = domainMax === domainMin
           ? 1
-          : Math.min(1, Math.max(0, chartMax / (chartMax - chartMin)))
+          : Math.min(1, Math.max(0, domainMax / (domainMax - domainMin)))
         const crossesZero = dataMin < 0 && dataMax > 0
+        // The line path never touches the baseline, so its gradient box is
+        // the data extent rather than the domain.
         const strokeSplit = crossesZero
           ? Math.min(1, Math.max(0, dataMax / (dataMax - dataMin)))
           : 1
