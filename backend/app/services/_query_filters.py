@@ -36,6 +36,22 @@ def is_not_future(as_of: date):
     return Transaction.date <= as_of
 
 
+def is_inside_provider_snapshot():
+    """SQL filter: the provider's balance already accounts for this row.
+
+    A connected account's current balance is the number the provider sends,
+    not a sum of our rows, and providers net out the pending charges they
+    report. A row typed by hand is ambiguous the same way, since the user is
+    usually copying a charge the bank is already showing them.
+
+    A recurring placeholder is the one case we can be sure about: we invented
+    the row from a schedule, so no provider has ever seen it. Treating it as
+    already counted makes it cancel itself out, leaving a charge that shows up
+    in the forecast totals but moves no balance.
+    """
+    return Transaction.source != "recurring"
+
+
 def counts_in_current_balance(as_of: date):
     """SQL filter: the row belongs in the balance labelled "current".
 

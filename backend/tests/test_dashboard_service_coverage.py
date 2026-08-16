@@ -62,11 +62,12 @@ async def _make_account(session, user_id, workspace_id, *, currency="BRL",
 
 async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt,
                    *, currency="BRL", source="manual", category_id=None,
-                   amount_primary=None, transfer_pair_id=None):
+                   amount_primary=None, transfer_pair_id=None, status="posted"):
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         workspace_id=workspace_id, description="t", amount=Decimal(str(amount)),
         date=dt, type=typ, source=source, currency=currency,
+        status=status,
         category_id=category_id,
         amount_primary=Decimal(str(amount_primary)) if amount_primary is not None else None,
         transfer_pair_id=transfer_pair_id,
@@ -549,6 +550,41 @@ async def test_transfer_like_recurring_adjusts_balance_without_becoming_expense(
     assert summary.total_balance.get("BRL", 0) == pytest.approx(1000.0)
     assert summary.projected_balance.get("BRL", 0) == pytest.approx(900.0)
     assert summary.projected_expenses == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_summary_connected_pending_split_by_who_reported_it(
+    session, test_user, test_workspace, test_connection
+):
+    """On a connected account, only a provider-reported pending row is treated
+    as already inside the provider's balance.
+
+    Both rows sit in the forecast, but the synced one is assumed to be netted
+    out of the 1000 the provider sent, while the recurring placeholder still
+    has to come off the projected balance.
+    """
+    today = date.today()
+    account = await _make_account(
+        session, test_user.id, test_workspace.id, balance="1000.00",
+        connection_id=test_connection.id,
+    )
+    await _add_txn(
+        session, test_user.id, account.id, test_workspace.id, 40, "debit",
+        today, source="sync", status="pending",
+    )
+    await _add_txn(
+        session, test_user.id, account.id, test_workspace.id, 25, "debit",
+        today, source="recurring", status="pending",
+    )
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=today)
+
+    assert summary.total_balance.get("BRL", 0) == pytest.approx(1000.0)
+    # Only the placeholder moves the projection; the synced row is already in.
+    assert summary.projected_balance.get("BRL", 0) == pytest.approx(975.0)
+    # Neither has settled, so both stay out of the actual expenses.
+    assert summary.monthly_expenses == pytest.approx(0.0)
+    assert summary.projected_expenses == pytest.approx(65.0)
 
 
 @pytest.mark.asyncio

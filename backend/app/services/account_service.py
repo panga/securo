@@ -16,6 +16,7 @@ from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
     is_confirmed,
+    is_inside_provider_snapshot,
     is_not_future,
 )
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
@@ -882,6 +883,9 @@ async def get_account_summary(
             # the balance before the visible window from that snapshot and all
             # settled/pending rows in the visible historical portion. This
             # preserves the provider number even when it includes pending rows.
+            # A recurring placeholder is left out of that unwinding: we
+            # generated it ourselves so it was never in the snapshot, and
+            # removing it here would cancel it out when the walk re-applies it.
             period_filters = [
                 *ob_base_filters,
                 Transaction.date >= date_from,
@@ -901,7 +905,11 @@ async def get_account_summary(
                         (Transaction.type == "credit", effective_amount),
                         else_=-effective_amount,
                     )
-                ), 0)).where(*period_filters, Transaction.status == "pending")
+                ), 0)).where(
+                    *period_filters,
+                    Transaction.status == "pending",
+                    is_inside_provider_snapshot(),
+                )
             )
             opening_balance = current_balance - float(posted_result.scalar() or 0)
             opening_balance -= float(pending_result.scalar() or 0)

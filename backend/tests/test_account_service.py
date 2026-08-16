@@ -848,6 +848,47 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
 
 
 @pytest.mark.asyncio
+async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk(
+    session, test_user, test_workspace, test_connection
+):
+    """A recurring placeholder still moves the projected balance on a
+    connected account.
+
+    The provider's 780 covers only what it reported, so backing the
+    placeholder out of the opening balance would cancel it against the walk
+    that re-applies it: the charge would sit in the forecast totals while the
+    projected balance ignored it.
+    """
+    account = await _make_account(
+        session, test_user.id, "Conn Recurring", balance="780.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    month_start = today.replace(day=1)
+    prev_month = (month_start - timedelta(days=1)).replace(day=1)
+    await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
+    await _add_txn(session, test_user.id, account.id, 300, "credit", month_start + timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 20, "debit",
+        min(month_start + timedelta(days=4), today),
+        source="recurring", status="pending",
+    )
+
+    summary = await get_account_summary(
+        session, account.id, test_workspace.id,
+        date_from=month_start, date_to=today,
+    )
+    assert summary is not None
+    # The provider snapshot is untouched.
+    assert summary["current_balance"] == pytest.approx(780.0)
+    # 780 − 300 posted in period, with the placeholder left in so the frontend
+    # walk lands on 760 rather than back on 780.
+    assert summary["opening_balance"] == pytest.approx(480.0)
+    assert summary["monthly_expenses"] == pytest.approx(0.0)
+    assert summary["projected_expenses"] == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
 async def test_get_account_summary_connected_excludes_future_rows_from_opening_balance(
     session, test_user, test_workspace, test_connection
 ):

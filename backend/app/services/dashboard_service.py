@@ -287,8 +287,16 @@ async def get_summary(
                 continue
             # A connected provider is authoritative for today's current
             # number. If it exposes a pending row dated today or earlier, do
-            # not add that same row again to the projected walk.
-            if tx.account and tx.account.connection_id and tx.status == "pending" and tx.date <= today:
+            # not add that same row again to the projected walk. A recurring
+            # placeholder is the exception: we generated it from a schedule, so
+            # it is missing from that number and still has to be applied.
+            if (
+                tx.account
+                and tx.account.connection_id
+                and tx.status == "pending"
+                and tx.date <= today
+                and tx.source != "recurring"
+            ):
                 continue
             account_currency = tx.account.currency if tx.account else tx.currency
             amount = (
