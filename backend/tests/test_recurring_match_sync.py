@@ -139,7 +139,7 @@ async def test_sync_links_and_advances_bill(session, test_user, test_workspace, 
 
 
 @pytest.mark.asyncio
-async def test_sync_merges_into_recurring_placeholder(
+async def test_sync_promotes_pending_placeholder_to_posted(
     session, test_user, test_workspace, conn_account
 ):
     conn, account = conn_account
@@ -152,7 +152,9 @@ async def test_sync_merges_into_recurring_placeholder(
         select(Transaction).where(Transaction.source == "recurring")
     )).scalar_one()
     placeholder_id = placeholder.id
-    assert placeholder.status == "posted"
+    # Synced account: the placeholder is held pending until a real
+    # charge confirms it, so a missed match never inflates the balance.
+    assert placeholder.status == "pending"
 
     provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
                               amount=Decimal("39.90"), date=date(2025, 1, 11))])

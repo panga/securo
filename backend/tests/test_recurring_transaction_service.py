@@ -582,6 +582,50 @@ async def test_generate_pending(session: AsyncSession, test_user, test_workspace
 
 
 @pytest.mark.asyncio
+async def test_generate_pending_holds_synced_account_rows_pending(
+    session: AsyncSession, test_user, test_workspace, test_connection
+):
+    """On a synced account the placeholder waits for the real charge.
+
+    The incoming charge often fails to match, and two posted rows for one
+    charge inflate the balance silently. Holding it pending makes a missed
+    match cost a visible stale row instead of a wrong number.
+    """
+    synced = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+        connection_id=test_connection.id,
+    )
+    session.add(synced)
+    await session.commit()
+
+    await create_recurring_transaction(
+        session,
+        test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Synced Sub",
+            amount=Decimal("10"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=synced.id,
+        ),
+    )
+    assert await generate_pending(session, test_user.id, up_to=date(2025, 1, 1)) == 1
+
+    result = await session.execute(
+        select(Transaction).where(Transaction.account_id == synced.id)
+    )
+    [txn] = result.scalars().all()
+    assert txn.status == "pending"
+
+
+@pytest.mark.asyncio
 async def test_generate_pending_quarterly_respects_end_date(
     session: AsyncSession, test_user, test_workspace, test_account_for_recurring
 ):
