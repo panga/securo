@@ -430,7 +430,7 @@ export default function DashboardPage() {
         // need the actual/forecast split, while `projected_total` is the
         // user-visible all-in amount.
         const actual = s.projected_total
-        const prevAmount = budget ? Number(budget.prev_month_amount) : 0
+        const prevAmount = budget ? Number(budget.projected_prev_month_amount) : 0
         let momPct: number | null = null
         if (prevAmount > 0) {
           momPct = ((actual - prevAmount) / prevAmount) * 100
