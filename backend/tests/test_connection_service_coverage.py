@@ -19,8 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.providers.base import (
     AccountData,
     ConnectionData,
@@ -65,6 +67,72 @@ def _patch_helpers():
         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
     )
+
+
+@pytest.mark.asyncio
+async def test_shared_workspace_sync_imports_as_connection_owner(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A workspace member may trigger sync without owning imported rows."""
+    requester = User(
+        id=uuid.uuid4(),
+        email="requester@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        preferences={"currency_display": "BRL"},
+    )
+    session.add(requester)
+    await session.flush()
+
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="shared-account",
+            name="Brokerage",
+            type="checking",
+            balance=Decimal("100"),
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="shared-tx",
+            description="DIVIDEND",
+            amount=Decimal("10"),
+            date=date.today(),
+            type="credit",
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="shared-holding",
+            name="Shared Fund",
+            currency="BRL",
+            current_value=Decimal("500"),
+        ),
+    ])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    account = await session.scalar(select(Account).where(Account.external_id == "shared-account"))
+    transaction = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "shared-tx")
+    )
+    asset = await session.scalar(select(Asset).where(Asset.external_id == "shared-holding"))
+    wallet = await session.get(AssetGroup, asset.group_id)
+
+    assert account is not None and account.user_id == test_user.id
+    assert transaction is not None and transaction.user_id == test_user.id
+    assert asset is not None and asset.user_id == test_user.id
+    assert wallet is not None and wallet.user_id == test_user.id
 
 
 # ---------------------------------------------------------------------------

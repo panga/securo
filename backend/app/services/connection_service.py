@@ -554,6 +554,23 @@ async def _sync_holdings(
             existing.connection_id = connection.id
             continue
 
+        # A provider-reported closure is reversible. The prior raw status is
+        # already persisted in external_metadata, so no separate schema field
+        # is needed to distinguish TOTAL_WITHDRAWAL -> ACTIVE from a manually
+        # entered sell date. Manual dates remain authoritative when there was
+        # no provider withdrawal transition.
+        previous_provider_status = (
+            str((existing.external_metadata or {}).get("status") or "").upper()
+            if existing is not None
+            else ""
+        )
+        if (
+            existing is not None
+            and existing.sell_date is not None
+            and previous_provider_status == "TOTAL_WITHDRAWAL"
+        ):
+            existing.sell_date = None
+
         asset = await _upsert_asset_from_holding(
             session, existing, holding, user_id, connection.id, source,
             workspace_id=connection.workspace_id,
@@ -1570,7 +1587,7 @@ async def sync_connection(
     session: AsyncSession,
     connection_id: uuid.UUID,
     workspace_id: uuid.UUID,
-    user_id: uuid.UUID,
+    requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
 ) -> tuple[BankConnection, int]:
     connection = await get_connection(session, connection_id, workspace_id)
@@ -1578,6 +1595,20 @@ async def sync_connection(
         raise ValueError("Connection not found")
     if not connection.credentials:
         raise ValueError("Credentials not found")
+
+    # Authorization is workspace-scoped and happens before this service is
+    # called. Data imported from a bank connection, however, must always be
+    # owned by the user who owns that connection — not by whichever workspace
+    # member clicked Sync. Mixing those identities creates duplicate holdings
+    # and wallets because provider external IDs are unique per user.
+    if requesting_user_id != connection.user_id:
+        logger.info(
+            "Connection %s sync requested by workspace member %s; importing as owner %s",
+            connection.id,
+            requesting_user_id,
+            connection.user_id,
+        )
+    user_id = connection.user_id
 
     conn_settings = connection.settings or {}
     payee_source = conn_settings.get("payee_source", "auto")
