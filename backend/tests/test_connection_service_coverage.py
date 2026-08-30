@@ -128,11 +128,12 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
         select(Transaction).where(Transaction.external_id == "shared-tx")
     )
     asset = await session.scalar(select(Asset).where(Asset.external_id == "shared-holding"))
+    assert asset is not None
     wallet = await session.get(AssetGroup, asset.group_id)
 
     assert account is not None and account.user_id == test_user.id
     assert transaction is not None and transaction.user_id == test_user.id
-    assert asset is not None and asset.user_id == test_user.id
+    assert asset.user_id == test_user.id
     assert wallet is not None and wallet.user_id == test_user.id
 
 
