@@ -23,6 +23,7 @@ from app.models.asset_group import AssetGroup
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import WorkspaceMember
 from app.providers.base import (
     AccountData,
     ConnectionData,
@@ -226,6 +227,73 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     assert asset.name == "VWCE ETF"
     assert asset.type == "investment"
     assert asset.connection_id == conn.id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_matches_asset_across_workspace_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-member@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        source="test",
+        external_id="shared-holding-id",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    session.add(existing)
+    await session.commit()
+
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-holding-id",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+    await session.commit()
+
+    matching = (
+        await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == test_workspace.id,
+                Asset.source == "test",
+                Asset.external_id == "shared-holding-id",
+            )
+        )
+    ).scalars().all()
+    assert [asset.id for asset in matching] == [existing.id]
+    assert matching[0].connection_id == conn.id
+    assert matching[0].name == "Updated holding"
 
 
 @pytest.mark.asyncio

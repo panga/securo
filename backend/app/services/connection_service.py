@@ -248,7 +248,7 @@ async def _sync_holdings(
     """Fetch investment holdings from the provider and upsert them as Assets.
 
     Each holding becomes one Asset (type="investment") keyed by
-    (user_id, source, external_id). Every sync appends an AssetValue row
+    (workspace_id, source, external_id). Every sync appends an AssetValue row
     dated today; if a row for today already exists (same day re-sync) it
     is updated in place rather than creating a duplicate.
 
@@ -522,7 +522,7 @@ async def _sync_holdings(
     # re-add a connection without creating duplicate rows.
     existing_rows = await session.execute(
         select(Asset).where(
-            Asset.user_id == user_id,
+            Asset.workspace_id == connection.workspace_id,
             Asset.source == source,
             or_(Asset.connection_id == connection.id, Asset.connection_id.is_(None)),
         )
