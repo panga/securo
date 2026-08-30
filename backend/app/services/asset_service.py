@@ -6,6 +6,7 @@ from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, desc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -158,6 +159,7 @@ def _asset_to_read(
         gain_loss=gain_loss,
         value_count=value_count,
         source=asset.source,
+        external_id=asset.external_id,
         connection_id=asset.connection_id,
         isin=asset.isin,
         maturity_date=asset.maturity_date,
@@ -423,6 +425,26 @@ async def create_asset(
     market_provider: Optional[MarketPriceProvider] = None,
 ) -> AssetRead:
     """Create an asset, optionally with an initial value."""
+    if data.external_id is not None and data.valuation_method == "market_price":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="external_id is only supported for manually managed assets",
+        )
+
+    if data.external_id is not None:
+        existing_result = await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == workspace_id,
+                Asset.source == "manual",
+                Asset.external_id == data.external_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            existing_read = await get_asset(session, existing.id, workspace_id)
+            assert existing_read is not None
+            return existing_read
+
     # Market-priced path: fetch a live quote first so we can derive currency
     # and the initial value from the ticker. Validate up-front rather than
     # half-creating an asset and failing on a 5xx from Yahoo.
@@ -474,6 +496,7 @@ async def create_asset(
         last_price=Decimal(str(quote.price)) if quote else None,
         last_price_at=datetime.now(timezone.utc) if quote else None,
         logo_url=quote.logo_url if quote else None,
+        external_id=data.external_id,
         source=(
             "tesouro_direto"
             if quote and quote.exchange == "Tesouro Direto"
@@ -481,7 +504,25 @@ async def create_asset(
         ),
     )
     session.add(asset)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Return the winner when concurrent requests use the same external ID.
+        await session.rollback()
+        if data.external_id is not None:
+            existing_result = await session.execute(
+                select(Asset).where(
+                    Asset.workspace_id == workspace_id,
+                    Asset.source == "manual",
+                    Asset.external_id == data.external_id,
+                )
+            )
+            existing = existing_result.scalar_one_or_none()
+            if existing is not None:
+                existing_read = await get_asset(session, existing.id, workspace_id)
+                assert existing_read is not None
+                return existing_read
+        raise
 
     # Seed the first AssetValue from the live quote so the portfolio chart
     # has a starting data point without waiting for the scheduled refresh.
