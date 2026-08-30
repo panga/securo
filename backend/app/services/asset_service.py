@@ -425,26 +425,6 @@ async def create_asset(
     market_provider: Optional[MarketPriceProvider] = None,
 ) -> AssetRead:
     """Create an asset, optionally with an initial value."""
-    if data.external_id is not None and data.valuation_method == "market_price":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="external_id is only supported for manually managed assets",
-        )
-
-    if data.external_id is not None:
-        existing_result = await session.execute(
-            select(Asset).where(
-                Asset.workspace_id == workspace_id,
-                Asset.source == "manual",
-                Asset.external_id == data.external_id,
-            )
-        )
-        existing = existing_result.scalar_one_or_none()
-        if existing is not None:
-            existing_read = await get_asset(session, existing.id, workspace_id)
-            assert existing_read is not None
-            return existing_read
-
     # Market-priced path: fetch a live quote first so we can derive currency
     # and the initial value from the ticker. Validate up-front rather than
     # half-creating an asset and failing on a 5xx from Yahoo.
@@ -467,6 +447,25 @@ async def create_asset(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Could not fetch quote for {data.ticker}",
             )
+
+    source = (
+        "tesouro_direto"
+        if quote and quote.exchange == "Tesouro Direto"
+        else ("yfinance" if data.valuation_method == "market_price" else "manual")
+    )
+    if data.external_id is not None:
+        existing_result = await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == workspace_id,
+                Asset.source == source,
+                Asset.external_id == data.external_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            existing_read = await get_asset(session, existing.id, workspace_id)
+            assert existing_read is not None
+            return existing_read
 
     asset = Asset(
         user_id=user_id,
@@ -497,11 +496,7 @@ async def create_asset(
         last_price_at=datetime.now(timezone.utc) if quote else None,
         logo_url=quote.logo_url if quote else None,
         external_id=data.external_id,
-        source=(
-            "tesouro_direto"
-            if quote and quote.exchange == "Tesouro Direto"
-            else ("yfinance" if data.valuation_method == "market_price" else "manual")
-        ),
+        source=source,
     )
     session.add(asset)
     try:
@@ -513,7 +508,7 @@ async def create_asset(
             existing_result = await session.execute(
                 select(Asset).where(
                     Asset.workspace_id == workspace_id,
-                    Asset.source == "manual",
+                    Asset.source == source,
                     Asset.external_id == data.external_id,
                 )
             )
