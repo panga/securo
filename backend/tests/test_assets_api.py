@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -11,6 +12,7 @@ from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.asset import MarketSymbolQuote
 
 
 @pytest_asyncio.fixture
@@ -99,7 +101,6 @@ async def test_create_asset_with_external_id_returns_it_via_rest(
             "external_id": "  portfolio-asset-1  ",
         },
     )
-
     assert response.status_code == 201
     created = response.json()
     assert created["external_id"] == "portfolio-asset-1"
@@ -116,6 +117,43 @@ async def test_create_asset_with_external_id_returns_it_via_rest(
         and asset["external_id"] == "portfolio-asset-1"
         for asset in listed.json()
     )
+
+
+@pytest.mark.asyncio
+async def test_create_market_price_asset_with_external_id_via_rest(
+    client: AsyncClient, auth_headers: dict
+):
+    provider = AsyncMock()
+    provider.get_quote.return_value = MarketSymbolQuote(
+        symbol="VOO",
+        name="Vanguard S&P 500 ETF",
+        exchange="NYSE Arca",
+        currency="USD",
+        price=625.50,
+        quote_type="ETF",
+    )
+    payload = {
+        "name": "Vanguard S&P 500 ETF",
+        "type": "investment",
+        "valuation_method": "market_price",
+        "ticker": "VOO",
+        "units": 3.5,
+        "external_id": "portfolio-voo",
+    }
+
+    with patch(
+        "app.services.asset_service.get_market_price_provider",
+        return_value=provider,
+    ):
+        first = await client.post("/api/assets", headers=auth_headers, json=payload)
+        second = await client.post("/api/assets", headers=auth_headers, json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["id"] == first.json()["id"]
+    assert first.json()["external_id"] == "portfolio-voo"
+    assert first.json()["source"] == "yfinance"
+    assert first.json()["ticker"] == "VOO"
 
 
 @pytest.mark.asyncio
