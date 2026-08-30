@@ -56,6 +56,8 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+_PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
+
 
 def _clean_logo_url(value: object) -> Optional[str]:
     """Normalize a provider-supplied logo to a non-empty string or None.
@@ -545,12 +547,25 @@ async def _sync_holdings(
         if holding.is_withdrawn:
             if existing is None:
                 continue
+            provider_sell_date: Optional[str] = None
             if existing.sell_date is None:
                 existing.sell_date = today
+                provider_sell_date = today.isoformat()
+            else:
+                # Preserve provenance across repeated withdrawn payloads, but
+                # deliberately drop it once the user changes the date.
+                previous_marker = (existing.external_metadata or {}).get(
+                    _PROVIDER_SELL_DATE_METADATA_KEY
+                )
+                if previous_marker == existing.sell_date.isoformat():
+                    provider_sell_date = previous_marker
             # Keep descriptive fields fresh in case the provider still
             # updates them post-closure, but don't touch valuation.
             existing.name = holding.name
-            existing.external_metadata = holding.metadata
+            withdrawn_metadata = dict(holding.metadata or {})
+            if provider_sell_date is not None:
+                withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
+            existing.external_metadata = withdrawn_metadata or None
             existing.connection_id = connection.id
             continue
 
@@ -559,15 +574,14 @@ async def _sync_holdings(
         # is needed to distinguish TOTAL_WITHDRAWAL -> ACTIVE from a manually
         # entered sell date. Manual dates remain authoritative when there was
         # no provider withdrawal transition.
-        previous_provider_status = (
-            str((existing.external_metadata or {}).get("status") or "").upper()
-            if existing is not None
-            else ""
-        )
+        previous_metadata = existing.external_metadata or {} if existing is not None else {}
+        previous_provider_status = str(previous_metadata.get("status") or "").upper()
+        provider_sell_date = previous_metadata.get(_PROVIDER_SELL_DATE_METADATA_KEY)
         if (
             existing is not None
             and existing.sell_date is not None
             and previous_provider_status == "TOTAL_WITHDRAWAL"
+            and provider_sell_date == existing.sell_date.isoformat()
         ):
             existing.sell_date = None
 
