@@ -21,6 +21,7 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.bank_connection import BankConnection
+from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
@@ -141,6 +142,17 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
     transaction.user_id = requester.id
     asset.user_id = requester.id
     wallet.user_id = requester.id
+    bill = CreditCardBill(
+        id=uuid.uuid4(),
+        user_id=requester.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        external_id="legacy-bill",
+        due_date=date.today(),
+        total_amount=Decimal("100"),
+        currency="BRL",
+    )
+    session.add(bill)
     await session.commit()
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
@@ -151,10 +163,13 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
     await session.refresh(transaction)
     await session.refresh(asset)
     await session.refresh(wallet)
+    await session.refresh(bill)
     assert account.user_id == test_user.id
     assert transaction.user_id == test_user.id
     assert asset.user_id == test_user.id
     assert wallet.user_id == test_user.id
+    assert bill.user_id == test_user.id
+    assert bill.workspace_id == test_workspace.id
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +347,79 @@ async def test_sync_holdings_matches_asset_across_workspace_members(
     assert matching[0].user_id == test_user.id
     await session.refresh(existing_group)
     assert existing_group.user_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_does_not_adopt_another_connections_wallet(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-connection-owner@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    current = await _make_connection(session, test_user.id, "Current Broker")
+    other = await _make_connection(session, other_member.id, "Other Broker")
+    other_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        source="test",
+        external_id=other.external_id,
+        name="Other connection wallet",
+        position=0,
+    )
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        group_id=other_group.id,
+        source="test",
+        external_id="shared-provider-holding",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    session.add_all([other_group, existing])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-provider-holding",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, current, {"token": "t"})
+    await session.commit()
+
+    await session.refresh(other_group)
+    await session.refresh(existing)
+    assert other_group.user_id == other_member.id
+    assert other_group.connection_id == other.id
+    assert existing.group_id == other_group.id
 
 
 @pytest.mark.asyncio

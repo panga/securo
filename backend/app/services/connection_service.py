@@ -597,6 +597,10 @@ async def _sync_holdings(
                 existing_group is not None
                 and existing_group.workspace_id == connection.workspace_id
                 and existing_group.source == source
+                and (
+                    existing_group.connection_id == connection.id
+                    or existing_group.connection_id is None
+                )
             ):
                 existing_group.user_id = user_id
                 sync_owned_group_ids.add(existing_group.id)
@@ -1718,6 +1722,11 @@ async def sync_connection(
                         Transaction.account_id == account.id,
                         Transaction.source == "sync",
                     )
+                    .values(user_id=user_id, workspace_id=connection.workspace_id)
+                )
+                await session.execute(
+                    update(CreditCardBill)
+                    .where(CreditCardBill.account_id == account.id)
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
                 )
 

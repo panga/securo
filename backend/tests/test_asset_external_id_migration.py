@@ -51,5 +51,8 @@ def test_index_change_aborts_before_schema_changes(monkeypatch, direction, scope
     with pytest.raises(RuntimeError, match=f"{scope_column}=scope-1"):
         getattr(migration, direction)()
 
+    statement = " ".join(str(bind.execute.call_args.args[0]).lower().split())
+    assert f"select {scope_column} as scope_id" in statement
+    assert f"group by {scope_column}, source, external_id" in statement
     drop_index.assert_not_called()
     create_index.assert_not_called()
