@@ -516,19 +516,21 @@ async def _sync_holdings(
     # the user's customization with them.
     split_group_ids = {row[0] for row in sync_owned if row[1] and "::" in row[1]}
 
-    # Also pull orphans (connection_id IS NULL) with the same source —
-    # those are assets archived by a prior disconnect. Re-matching on
-    # external_id lets users re-link their investment history when they
-    # re-add a connection without creating duplicate rows.
     existing_rows = await session.execute(
         select(Asset).where(
             Asset.workspace_id == connection.workspace_id,
             Asset.source == source,
-            or_(Asset.connection_id == connection.id, Asset.connection_id.is_(None)),
         )
     )
+    existing_assets = list(existing_rows.scalars().all())
     existing_by_external: dict[str, Asset] = {
-        a.external_id: a for a in existing_rows.scalars().all() if a.external_id
+        asset.external_id: asset for asset in existing_assets if asset.external_id
+    }
+    archive_candidates: dict[str, Asset] = {
+        asset.external_id: asset
+        for asset in existing_assets
+        if asset.external_id
+        and (asset.connection_id == connection.id or asset.connection_id is None)
     }
     seen: set[str] = set()
 
@@ -620,7 +622,7 @@ async def _sync_holdings(
         if asset.sell_date is None:
             await _upsert_asset_value_for_today(session, asset, holding.current_value, today)
 
-    for ext_id, asset in existing_by_external.items():
+    for ext_id, asset in archive_candidates.items():
         if ext_id not in seen and not asset.is_archived:
             asset.is_archived = True
 
