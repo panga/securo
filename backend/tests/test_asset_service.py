@@ -1,9 +1,11 @@
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -156,6 +158,44 @@ async def test_create_asset_with_initial_value(session: AsyncSession, test_user:
     assert result.current_value == 15000.0
     assert result.gain_loss == 3000.0
     assert result.value_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_asset_recovers_from_concurrent_external_id_conflict(monkeypatch):
+    workspace_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    existing_asset = Mock(id=uuid.uuid4())
+    missing_result = Mock()
+    missing_result.scalar_one_or_none.return_value = None
+    existing_result = Mock()
+    existing_result.scalar_one_or_none.return_value = existing_asset
+
+    session = Mock(spec=AsyncSession)
+    session.execute = AsyncMock(side_effect=[missing_result, existing_result])
+    session.flush = AsyncMock(
+        side_effect=IntegrityError("INSERT INTO assets", {}, Exception("duplicate"))
+    )
+    session.rollback = AsyncMock()
+    session.add = Mock()
+    expected = Mock()
+    get_asset = AsyncMock(return_value=expected)
+    monkeypatch.setattr(asset_service, "get_asset", get_asset)
+
+    result = await asset_service.create_asset(
+        session,
+        workspace_id,
+        user_id,
+        AssetCreate(
+            name="External holding",
+            type="investment",
+            currency="USD",
+            external_id="external-asset-1",
+        ),
+    )
+
+    assert result is expected
+    session.rollback.assert_awaited_once()
+    get_asset.assert_awaited_once_with(session, existing_asset.id, workspace_id)
 
 
 @pytest.mark.asyncio
