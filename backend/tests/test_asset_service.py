@@ -171,7 +171,20 @@ async def test_create_asset_recovers_from_concurrent_external_id_conflict(monkey
     existing_result.scalar_one_or_none.return_value = existing_asset
 
     session = Mock(spec=AsyncSession)
-    session.execute = AsyncMock(side_effect=[missing_result, existing_result])
+    results = iter([missing_result, existing_result])
+
+    async def execute_scoped_lookup(statement):
+        statement_text = str(statement)
+        assert "assets.workspace_id" in statement_text
+        assert "assets.source" in statement_text
+        assert "assets.external_id" in statement_text
+        bound_values = set(statement.compile().params.values())
+        assert workspace_id in bound_values
+        assert "manual" in bound_values
+        assert "external-asset-1" in bound_values
+        return next(results)
+
+    session.execute = AsyncMock(side_effect=execute_scoped_lookup)
     session.flush = AsyncMock(
         side_effect=IntegrityError("INSERT INTO assets", {}, Exception("duplicate"))
     )
