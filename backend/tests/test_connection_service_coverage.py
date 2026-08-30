@@ -119,8 +119,9 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
     ])
 
     p1, p2, p3 = _patch_helpers()
+    q1, q2, q3 = _patch_helpers()
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
-         p1, p2, p3:
+         q1, q2, q3:
         await sync_connection(session, conn.id, test_workspace.id, requester.id)
 
     account = await session.scalar(select(Account).where(Account.external_id == "shared-account"))
@@ -135,6 +136,25 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
     assert transaction is not None and transaction.user_id == test_user.id
     assert asset.user_id == test_user.id
     assert wallet is not None and wallet.user_id == test_user.id
+
+    account.user_id = requester.id
+    transaction.user_id = requester.id
+    asset.user_id = requester.id
+    wallet.user_id = requester.id
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    await session.refresh(account)
+    await session.refresh(transaction)
+    await session.refresh(asset)
+    await session.refresh(wallet)
+    assert account.user_id == test_user.id
+    assert transaction.user_id == test_user.id
+    assert asset.user_id == test_user.id
+    assert wallet.user_id == test_user.id
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +248,7 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     assert asset.name == "VWCE ETF"
     assert asset.type == "investment"
     assert asset.connection_id == conn.id
+    assert asset.workspace_id == conn.workspace_id
 
 
 @pytest.mark.asyncio
@@ -252,6 +273,7 @@ async def test_sync_holdings_matches_asset_across_workspace_members(
             role="editor",
         )
     )
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
     existing = Asset(
         id=uuid.uuid4(),
         user_id=other_member.id,
@@ -263,10 +285,22 @@ async def test_sync_holdings_matches_asset_across_workspace_members(
         currency="USD",
         valuation_method="manual",
     )
+    existing_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=None,
+        source="test",
+        external_id=conn.external_id,
+        name="Legacy wallet",
+        position=0,
+    )
+    session.add(existing_group)
+    await session.flush()
+    existing.group_id = existing_group.id
     session.add(existing)
     await session.commit()
 
-    conn = await _make_connection(session, test_user.id, "Shared Broker")
     mock_provider = AsyncMock()
     mock_provider.get_holdings = AsyncMock(
         return_value=[
@@ -295,6 +329,9 @@ async def test_sync_holdings_matches_asset_across_workspace_members(
     assert [asset.id for asset in matching] == [existing.id]
     assert matching[0].connection_id == conn.id
     assert matching[0].name == "Updated holding"
+    assert matching[0].user_id == test_user.id
+    await session.refresh(existing_group)
+    assert existing_group.user_id == test_user.id
 
 
 @pytest.mark.asyncio

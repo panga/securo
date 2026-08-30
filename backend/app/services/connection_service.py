@@ -591,6 +591,17 @@ async def _sync_holdings(
             session, existing, holding, user_id, connection.id, source,
             workspace_id=connection.workspace_id,
         )
+        if asset.group_id is not None:
+            existing_group = await session.get(AssetGroup, asset.group_id)
+            if (
+                existing_group is not None
+                and existing_group.workspace_id == connection.workspace_id
+                and existing_group.source == source
+            ):
+                existing_group.user_id = user_id
+                sync_owned_group_ids.add(existing_group.id)
+                if existing_group.external_id and "::" in existing_group.external_id:
+                    split_group_ids.add(existing_group.id)
         # Attach to its institution's wallet. NOTE this deliberately moves
         # holdings between sync-owned wallets, not just out of a null group
         # like it used to: re-attribution corrects the sync's own earlier
@@ -663,7 +674,7 @@ async def _upsert_asset_from_holding(
     user_id: uuid.UUID,
     connection_id: uuid.UUID,
     source: str,
-    workspace_id: Optional[uuid.UUID] = None,
+    workspace_id: uuid.UUID,
 ) -> Asset:
     """Create or update an Asset from a HoldingData payload.
 
@@ -676,6 +687,7 @@ async def _upsert_asset_from_holding(
     if asset is None:
         asset = Asset(
             user_id=user_id,
+            workspace_id=workspace_id,
             connection_id=connection_id,
             source=source,
             external_id=holding.external_id,
@@ -698,6 +710,7 @@ async def _upsert_asset_from_holding(
     # Fields Pluggy consistently returns — safe to overwrite each sync.
     asset.name = holding.name
     asset.currency = holding.currency
+    asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.
     asset.external_metadata = holding.metadata
     previous_connection_id = asset.connection_id
@@ -709,7 +722,7 @@ async def _upsert_asset_from_holding(
     # Re-adopted across workspaces (bank deleted in one, re-added in the
     # other): the asset follows its connection; its old wallet stays behind
     # in the old workspace, so placement is redone by the caller.
-    if workspace_id is not None and asset.workspace_id != workspace_id:
+    if asset.workspace_id != workspace_id:
         asset.workspace_id = workspace_id
         asset.group_id = None
 
@@ -1695,6 +1708,18 @@ async def sync_connection(
                 )
             )
             account = result.scalar_one_or_none()
+
+            if account is not None:
+                account.user_id = user_id
+                account.workspace_id = connection.workspace_id
+                await session.execute(
+                    update(Transaction)
+                    .where(
+                        Transaction.account_id == account.id,
+                        Transaction.source == "sync",
+                    )
+                    .values(user_id=user_id, workspace_id=connection.workspace_id)
+                )
 
             institution = await _resolve_institution(
                 session, connection.id, institution_cache, acc_data
