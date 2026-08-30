@@ -359,6 +359,41 @@ async def test_provider_withdrawn_holding_reopens_when_active_again(
 
 
 @pytest.mark.asyncio
+async def test_active_holding_preserves_sell_date_edited_after_provider_withdrawal(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A user correction after withdrawal must survive provider reactivation."""
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("500")),
+    ]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("0"), is_withdrawn=True),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+
+    corrected_sell_date = date.today() - timedelta(days=14)
+    asset.sell_date = corrected_sell_date
+    await session.commit()
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("525")),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date == corrected_sell_date
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
 async def test_same_day_resync_updates_asset_value_in_place(
     session: AsyncSession, test_user: User, mock_connection: BankConnection
 ):
