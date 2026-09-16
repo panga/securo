@@ -21,13 +21,17 @@ export function sortAccountsByDisplayName<
  * Return a presentation-only copy with the largest account balances first.
  * Debt accounts participate by magnitude, matching the balance list in the
  * sidebar, while invalid/missing balances sort as zero.
+ * Pass a selector to compare multi-currency accounts in a common currency.
  */
 export function sortAccountsByAbsoluteBalance<
   T extends { current_balance?: number | string | null },
->(accounts: readonly T[]): T[] {
+>(
+  accounts: readonly T[],
+  getBalance: (account: T) => number | string | null | undefined = (account) => account.current_balance,
+): T[] {
   return [...accounts].sort((left, right) => {
-    const leftBalance = Number(left.current_balance) || 0
-    const rightBalance = Number(right.current_balance) || 0
+    const leftBalance = Number(getBalance(left)) || 0
+    const rightBalance = Number(getBalance(right)) || 0
     return Math.abs(rightBalance) - Math.abs(leftBalance)
   })
 }

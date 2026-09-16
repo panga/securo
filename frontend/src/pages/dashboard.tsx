@@ -406,7 +406,7 @@ export default function DashboardPage() {
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
   const sortedAvailableBalanceAccounts = useMemo(
-    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts),
+    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, (a) => a.balance_primary ?? a.current_balance),
     [availableBalanceAccounts],
   )
   // While accounts are loading or failed to load, treat their balance

@@ -440,7 +440,7 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {sortAccountsByAbsoluteBalance(visibleAccounts).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => a.balance_primary ?? a.current_balance).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
                     const balance = Number(acc.current_balance) || 0
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
