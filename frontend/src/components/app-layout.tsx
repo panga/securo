@@ -524,7 +524,8 @@ export function AppLayout() {
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
                   {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => a.balance_primary ?? a.current_balance).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
+                    const balance = Number(acc.balance_primary ?? acc.current_balance) || 0
+                    const balanceCurrency = acc.balance_primary != null ? userCurrency : acc.currency
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
@@ -543,7 +544,7 @@ export function AppLayout() {
                         </div>
                         <div className="text-right shrink-0 ml-2">
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency, locale))}
+                            {mask(formatCurrency(balance, balanceCurrency, locale))}
                           </span>
                         </div>
                       </Link>
