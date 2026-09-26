@@ -236,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Salva bozza"
+      "saveDraft": "Salva bozza",
+      "downloadStatement": "Scarica estratto conto"
     },
     "settings": {
       "title": "Invoice settings",
@@ -329,7 +330,25 @@
       "negative_discount": "Uno sconto non può essere negativo.",
       "first_term": "Il prezzo in vigore dall'inizio non può essere spostato né rimosso. Modificalo o aggiungi un nuovo prezzo da una data successiva.",
       "not_receivable": "Solo una fattura emessa da te può appartenere a un accordo.",
-      "period_already_issued": "Questo periodo è appena stato emesso. Aggiorna per vederlo."
+      "period_already_issued": "Questo periodo è appena stato emesso. Aggiorna per vederlo.",
+      "product_not_found": "Prodotto non trovato.",
+      "price_not_found": "Prezzo non trovato su questo prodotto.",
+      "product_in_use": "Alcune fatture citano questo prodotto. Archivialo invece di eliminarlo.",
+      "price_in_use": "Alcune fatture sono state emesse a questo prezzo. Archivialo invece di eliminarlo.",
+      "invalid_kind": "Tipo di prodotto sconosciuto.",
+      "invalid_billing": "Tipo di fatturazione sconosciuto.",
+      "interval_required": "Un prezzo ricorrente ha bisogno di una frequenza.",
+      "currency_required": "Un prezzo ha bisogno di una valuta.",
+      "unit_price_required": "Un prezzo ha bisogno di un importo.",
+      "negative_price": "Un prezzo non può essere negativo.",
+      "invalid_fiscal_refs": "I riferimenti fiscali devono essere brevi valori di testo sotto chiavi semplici (lettere, cifre, trattino basso).",
+      "price_key_taken": "Un altro prezzo usa già questa chiave di ricerca o id esterno.",
+      "installments_mismatch": "Le rate non sommano il totale della fattura.",
+      "installments_too_few": "Un piano richiede almeno due rate.",
+      "installment_amount_not_positive": "Ogni rata deve avere un importo.",
+      "installment_due_required": "Ogni rata richiede una data di scadenza.",
+      "invalid_deduction_kind": "Tipo di deduzione sconosciuto.",
+      "deduction_not_found": "Deduzione non trovata."
     },
     "comingNext": "Fattura i tuoi clienti e tieni traccia di cosa è stato pagato e cosa è ancora aperto. È la prossima cosa in costruzione.",
     "document": {
@@ -564,6 +583,128 @@
         "empty": "Nessuna fattura in questo accordo ancora.",
         "emptyNext": "Nessuna fattura ancora. La prima verrà scritta il {{date}}."
       }
+    },
+    "products": {
+      "title": "Prodotti",
+      "new": "Nuovo prodotto",
+      "newDescription": "Qualcosa che vendi, con un prezzo per valuta. Sceglierlo compila una riga della fattura; la riga resta tua da modificare dopo.",
+      "editTitle": "Modifica prodotto",
+      "empty": "Ancora nessun prodotto. Aggiungi ciò che vendi e ogni riga di fattura sarà a un clic di distanza.",
+      "emptyArchived": "Niente in archivio.",
+      "emptyPicker": "Ancora nessun prodotto. Aggiungili in Prodotti.",
+      "noneFound": "Nessun prodotto corrisponde.",
+      "searchPlaceholder": "Cerca prodotti",
+      "pick": "Scegli dal catalogo",
+      "fromCatalog": "Dal catalogo",
+      "noPrice": "Nessun prezzo",
+      "noPriceIn": "nessun prezzo in {{currency}}",
+      "perUnit": "per {{unit}}",
+      "created": "Prodotto creato",
+      "saved": "Prodotto salvato",
+      "archived": "Prodotto archiviato. Le fatture che lo citano non cambiano.",
+      "restored": "Prodotto ripristinato",
+      "deleted": "Prodotto eliminato",
+      "filter": {
+        "active": "Attivi",
+        "archived": "Archiviati"
+      },
+      "kind": {
+        "service": "Servizio",
+        "product": "Prodotto"
+      },
+      "billing": {
+        "one_time": "Una tantum",
+        "every": "Ogni {{interval}}"
+      },
+      "per": {
+        "weekly": "settimana",
+        "biweekly": "2 settimane",
+        "monthly": "mese",
+        "quarterly": "trimestre",
+        "semiannual": "6 mesi",
+        "yearly": "anno"
+      },
+      "column": {
+        "name": "Nome",
+        "kind": "Tipo",
+        "prices": "Prezzi",
+        "invoices": "Fatture"
+      },
+      "field": {
+        "name": "Nome",
+        "namePlaceholder": "Ora di consulenza, Piano Pro, Design del logo",
+        "kind": "Tipo",
+        "description": "Descrizione",
+        "prices": "Prezzi",
+        "pricesHint": "Uno per valuta. Un prezzo ricorrente indica la frequenza; è un suggerimento per le fatture ricorrenti, nulla viene addebitato da solo.",
+        "addPrice": "Aggiungi prezzo",
+        "noPrices": "Nessun prezzo. Il nome compila comunque la riga; l'importo va digitato.",
+        "nickname": "Etichetta (facoltativa)",
+        "fiscalRefs": "Riferimenti fiscali",
+        "fiscalRefsHint": "Ciò che un documento fiscale richiede per riga. Suggerito dalla tua giurisdizione; aggiungi qualsiasi altra chiave ti serva.",
+        "customRefKey": "altra chiave (es. hs_code)",
+        "addRef": "Aggiungi",
+        "fiscalRefsNone": "Nulla di suggerito per questo tipo qui. Aggiungi qualsiasi chiave di cui i tuoi documenti fiscali hanno bisogno."
+      },
+      "action": {
+        "archive": "Archivia",
+        "restore": "Ripristina"
+      }
+    },
+    "installments": {
+      "title": "Dividi in rate",
+      "splitIn": "Dividi in",
+      "splitHint": "parti uguali, a un mese di distanza, dalla data di scadenza",
+      "add": "Aggiungi rata",
+      "label": "Etichetta",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Totale {{total}}.",
+      "mismatch": "Le rate sommano {{scheduled}}, la fattura {{total}}.",
+      "schedule": "Piano di pagamento",
+      "nextDue": "Prossima scadenza",
+      "dueDerived": "Definita dall'ultima rata.",
+      "count_one": "{{count}} rata",
+      "count_other": "{{count}} rate",
+      "state": {
+        "open": "Aperta",
+        "partial": "Parziale",
+        "paid": "Pagata",
+        "overdue": "Scaduta",
+        "draft": "Bozza",
+        "void": "Annullata",
+        "uncollectible": "Inesigibile"
+      }
+    },
+    "deductions": {
+      "title": "Registra una deduzione",
+      "description": "Chiude parte del dovuto senza che arrivi denaro: il cliente ha trattenuto un'imposta, il processore ha tenuto la sua commissione, la conversione è arrivata più bassa. Conta come saldato, mai come incassato.",
+      "action": "Registra deduzione",
+      "recorded": "Deduzione registrata",
+      "removed": "Deduzione rimossa",
+      "amount": "Importo",
+      "amountHint": "Fino al saldo: {{balance}}.",
+      "kindLabel": "Motivo",
+      "taxKind": "Quale imposta (facoltativo)",
+      "taxKindPlaceholder": "Ritenuta d'acconto, IVA...",
+      "note": "Nota (facoltativo)",
+      "settledWithout": "Saldato senza pagamento",
+      "kind": {
+        "withholding_tax": "Imposta trattenuta dal cliente",
+        "gateway_fee": "Commissione trattenuta dal processore",
+        "fx_difference": "Differenza di cambio",
+        "other": "Altro"
+      },
+      "differenceTitle": "Il pagamento è inferiore di {{difference}}",
+      "differenceHint": "Registra la differenza per chiudere la fattura",
+      "differenceNone": "Non registrare",
+      "figure": "Trattenuto"
+    },
+    "statement": {
+      "asIssued": "Fattura come emessa",
+      "asIssuedHint": "Il documento inviato al cliente",
+      "hint": "Pagamenti e trattenute dall'emissione, e il saldo",
+      "banner": "Questo PDF è la fattura come emessa. Da allora sono stati ricevuti {{paid}} e trattenuti {{deducted}}: l'estratto conto mostra ogni voce e il saldo.",
+      "title": "Estratto conto"
     }
   },
   "collections": {
@@ -1944,7 +2085,18 @@
       "uscc": "USCC"
     },
     "otherCountries": "Altri paesi",
-    "anyCountry": "Qualsiasi altro luogo"
+    "anyCountry": "Qualsiasi altro luogo",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / codice a barre",
+      "service_code": "Codice servizio (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Codice servizio comunale",
+      "hs_code": "Codice HS",
+      "sat_product_code": "Codice prodotto/servizio SAT",
+      "sat_unit_code": "Codice unità SAT"
+    }
   },
   "common": {
     "selectTimezone": "Seleziona fuso orario",

@@ -19,6 +19,8 @@ import type {
   Transaction,
   Payee,
   PayeeSummary,
+  DeductionKind,
+  InstallmentInput,
   Invoice,
   InvoiceDirection,
   InvoiceDocumentPayload,
@@ -30,6 +32,10 @@ import type {
   InvoiceSchedulePeriod,
   InvoiceScheduleStatus,
   InvoiceScheduleSummary,
+  Product,
+  ProductFieldSpec,
+  ProductKind,
+  PriceBilling,
   InvoiceLineInput,
   InvoiceShareLink,
   IssuerProfile,
@@ -763,6 +769,11 @@ export const fiscal = {
     const { data } = await api.get('/fiscal/tax-id-kinds')
     return data
   },
+  /** Fiscal references the workspace's jurisdiction suggests on a product. */
+  productFields: async (): Promise<{ jurisdiction: string | null; fields: ProductFieldSpec[] }> => {
+    const { data } = await api.get('/fiscal/product-fields')
+    return data
+  },
 }
 
 export interface PayeeWritePayload {
@@ -777,6 +788,67 @@ export interface PayeeWritePayload {
   is_favorite?: boolean
   /** Replaces the whole set. Omit to leave documents untouched. */
   tax_ids?: PayeeTaxId[]
+}
+
+export interface PricePayload {
+  currency: string
+  unit_price: string
+  tax_rate?: string | null
+  billing?: PriceBilling
+  interval?: InvoiceScheduleFrequency | null
+  nickname?: string | null
+  lookup_key?: string | null
+}
+
+export interface ProductPayload {
+  name?: string
+  description?: string | null
+  kind?: ProductKind
+  unit?: string | null
+  active?: boolean
+  fiscal_refs?: Record<string, string> | null
+  prices?: PricePayload[]
+}
+
+/** The catalog: what the workspace sells. Gated like invoices. */
+export const products = {
+  list: async (params?: { active?: boolean | null; kind?: ProductKind; q?: string }): Promise<Product[]> => {
+    const { data } = await api.get('/products', {
+      params: {
+        ...(params?.active === undefined ? {} : { active: params.active }),
+        ...(params?.kind ? { kind: params.kind } : {}),
+        ...(params?.q ? { q: params.q } : {}),
+      },
+    })
+    return data
+  },
+  get: async (id: string): Promise<Product> => {
+    const { data } = await api.get(`/products/${id}`)
+    return data
+  },
+  create: async (payload: ProductPayload): Promise<Product> => {
+    const { data } = await api.post('/products', payload)
+    return data
+  },
+  update: async (id: string, payload: ProductPayload): Promise<Product> => {
+    const { data } = await api.patch(`/products/${id}`, payload)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/products/${id}`)
+  },
+  addPrice: async (id: string, payload: PricePayload): Promise<Product> => {
+    const { data } = await api.post(`/products/${id}/prices`, payload)
+    return data
+  },
+  updatePrice: async (id: string, priceId: string, payload: Partial<PricePayload> & { active?: boolean }): Promise<Product> => {
+    const { data } = await api.patch(`/products/${id}/prices/${priceId}`, payload)
+    return data
+  },
+  removePrice: async (id: string, priceId: string): Promise<Product> => {
+    const { data } = await api.delete(`/products/${id}/prices/${priceId}`)
+    return data
+  },
 }
 
 export const payees = {
@@ -1890,6 +1962,8 @@ export interface InvoiceWritePayload {
   internal_notes?: string | null
   custom_fields?: Record<string, string> | null
   lines?: InvoiceLineInput[]
+  /** More than one due date. Must add up to the total; an empty list clears it. */
+  installments?: InstallmentInput[]
 }
 
 export interface MakeRecurringPayload {
@@ -2063,6 +2137,18 @@ export const invoices = {
     })
     return data
   },
+  /** Close part of the debt without money: tax withheld, a fee kept. */
+  deduct: async (
+    id: string,
+    payload: { kind: DeductionKind; amount: string; tax_kind?: string | null; note?: string | null; transaction_id?: string | null },
+  ): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/deductions`, payload)
+    return data
+  },
+  undeduct: async (id: string, deductionId: string): Promise<Invoice> => {
+    const { data } = await api.delete(`/invoices/${id}/deductions/${deductionId}`)
+    return data
+  },
   unallocate: async (id: string, allocationId: string): Promise<Invoice> => {
     const { data } = await api.delete(`/invoices/${id}/allocations/${allocationId}`)
     return data
@@ -2096,6 +2182,11 @@ export const invoices = {
    *  adds, which a plain <a href> would not carry. */
   pdf: async (id: string): Promise<Blob> => {
     const { data } = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' })
+    return data
+  },
+  /** The statement of account: payments and deductions since issue. */
+  statement: async (id: string): Promise<Blob> => {
+    const { data } = await api.get(`/invoices/${id}/statement`, { responseType: 'blob' })
     return data
   },
   share: async (id: string): Promise<InvoiceShareLink> => {

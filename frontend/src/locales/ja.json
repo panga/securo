@@ -236,7 +236,8 @@
       "downloadPdf": "PDFをダウンロード",
       "share": "リンクを共有",
       "revokeLink": "リンクを失効",
-      "saveDraft": "下書き保存"
+      "saveDraft": "下書き保存",
+      "downloadStatement": "明細書をダウンロード"
     },
     "settings": {
       "title": "請求書設定",
@@ -329,7 +330,25 @@
       "negative_discount": "割引を負の値にすることはできません。",
       "first_term": "開始時から有効な料金は移動も削除もできません。変更するか、より後の日付から新しい料金を追加してください。",
       "not_receivable": "契約に含められるのは、あなたが発行した請求書のみです。",
-      "period_already_issued": "この期間はたった今発行されました。更新して確認してください。"
+      "period_already_issued": "この期間はたった今発行されました。更新して確認してください。",
+      "product_not_found": "商品が見つかりません。",
+      "price_not_found": "この商品にその価格はありません。",
+      "product_in_use": "この商品を含む請求書があります。削除する代わりにアーカイブしてください。",
+      "price_in_use": "この価格で発行された請求書があります。削除する代わりにアーカイブしてください。",
+      "invalid_kind": "不明な商品の種類です。",
+      "invalid_billing": "不明な請求の種類です。",
+      "interval_required": "定期価格には頻度が必要です。",
+      "currency_required": "価格には通貨が必要です。",
+      "unit_price_required": "価格には金額が必要です。",
+      "negative_price": "価格をマイナスにはできません。",
+      "invalid_fiscal_refs": "税務参照コードは、シンプルなキー(英字、数字、アンダースコア)の下にある短いテキスト値である必要があります。",
+      "price_key_taken": "別の価格がすでにこの検索キーまたは外部IDを使用しています。",
+      "installments_mismatch": "分割の合計が請求書の合計と一致しません。",
+      "installments_too_few": "分割払いには2回以上の分割が必要です。",
+      "installment_amount_not_positive": "各分割には金額が必要です。",
+      "installment_due_required": "各分割には期日が必要です。",
+      "invalid_deduction_kind": "不明な控除の種類です。",
+      "deduction_not_found": "控除が見つかりません。"
     },
     "comingNext": "クライアントに請求し、支払い済みのものと未払いのものを管理します。現在開発中の次の機能です。",
     "document": {
@@ -564,6 +583,128 @@
         "empty": "この契約の請求書はまだありません。",
         "emptyNext": "請求書はまだありません。最初の請求書は{{date}}に作成されます。"
       }
+    },
+    "products": {
+      "title": "商品",
+      "new": "新しい商品",
+      "newDescription": "販売しているもので、通貨ごとに価格を持ちます。選ぶと請求書の明細行が埋まり、その後は自由に変更できます。",
+      "editTitle": "商品を編集",
+      "empty": "まだ商品がありません。販売しているものを登録すると、請求書の明細行はワンクリックで入力できます。",
+      "emptyArchived": "アーカイブはありません。",
+      "emptyPicker": "まだ商品がありません。「商品」で登録してください。",
+      "noneFound": "一致する商品がありません。",
+      "searchPlaceholder": "商品を検索",
+      "pick": "カタログから選ぶ",
+      "fromCatalog": "カタログから",
+      "noPrice": "価格なし",
+      "noPriceIn": "{{currency}}の価格なし",
+      "perUnit": "{{unit}}あたり",
+      "created": "商品を作成しました",
+      "saved": "商品を保存しました",
+      "archived": "商品をアーカイブしました。この商品を含む請求書は変わりません。",
+      "restored": "商品を復元しました",
+      "deleted": "商品を削除しました",
+      "filter": {
+        "active": "有効",
+        "archived": "アーカイブ済み"
+      },
+      "kind": {
+        "service": "サービス",
+        "product": "商品"
+      },
+      "billing": {
+        "one_time": "単発",
+        "every": "{{interval}}ごと"
+      },
+      "per": {
+        "weekly": "週",
+        "biweekly": "2週間",
+        "monthly": "月",
+        "quarterly": "四半期",
+        "semiannual": "6か月",
+        "yearly": "年"
+      },
+      "column": {
+        "name": "名前",
+        "kind": "種類",
+        "prices": "価格",
+        "invoices": "請求書"
+      },
+      "field": {
+        "name": "名前",
+        "namePlaceholder": "コンサルティング1時間、Proプラン、ロゴデザイン",
+        "kind": "種類",
+        "description": "説明",
+        "prices": "価格",
+        "pricesHint": "通貨ごとに1つ。定期価格は頻度を示します。定期請求書のためのヒントであり、それだけで請求されることはありません。",
+        "addPrice": "価格を追加",
+        "noPrices": "価格がありません。名前は明細行に入りますが、金額は手入力になります。",
+        "nickname": "ラベル(任意)",
+        "fiscalRefs": "税務参照コード",
+        "fiscalRefsHint": "税務書類が明細ごとに必要とする項目です。お住まいの管轄区域に基づいて提案されます。必要な他のキーも追加できます。",
+        "customRefKey": "その他のキー(例: hs_code)",
+        "addRef": "追加",
+        "fiscalRefsNone": "この種類にはここでの提案はありません。税務書類に必要なキーを追加してください。"
+      },
+      "action": {
+        "archive": "アーカイブ",
+        "restore": "復元"
+      }
+    },
+    "installments": {
+      "title": "分割払いにする",
+      "splitIn": "分割数",
+      "splitHint": "回に均等分割、1か月間隔、支払期日から",
+      "add": "分割を追加",
+      "label": "ラベル",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "合計 {{total}}。",
+      "mismatch": "分割の合計は {{scheduled}}、請求書は {{total}} です。",
+      "schedule": "支払いスケジュール",
+      "nextDue": "次回期日",
+      "dueDerived": "最後の分割で決まります。",
+      "count_one": "{{count}} 回払い",
+      "count_other": "{{count}} 回払い",
+      "state": {
+        "open": "未回収",
+        "partial": "一部入金",
+        "paid": "入金済み",
+        "overdue": "延滞",
+        "draft": "下書き",
+        "void": "無効",
+        "uncollectible": "回収不能"
+      }
+    },
+    "deductions": {
+      "title": "控除を記録",
+      "description": "入金なしで債権の一部を消し込みます。取引先が源泉徴収した、決済業者が手数料を差し引いた、為替換算で目減りした、といった場合です。回収済みではなく、精算済みとして扱われます。",
+      "action": "控除を記録",
+      "recorded": "控除を記録しました",
+      "removed": "控除を削除しました",
+      "amount": "金額",
+      "amountHint": "残高まで: {{balance}}。",
+      "kindLabel": "理由",
+      "taxKind": "税の種類(任意)",
+      "taxKindPlaceholder": "源泉所得税、消費税...",
+      "note": "メモ(任意)",
+      "settledWithout": "入金なしで精算",
+      "kind": {
+        "withholding_tax": "取引先による源泉徴収",
+        "gateway_fee": "決済業者が差し引いた手数料",
+        "fx_difference": "為替換算差額",
+        "other": "その他"
+      },
+      "differenceTitle": "入金が {{difference}} 不足しています",
+      "differenceHint": "差額を記録すると請求書が完了します",
+      "differenceNone": "記録しない",
+      "figure": "控除額"
+    },
+    "statement": {
+      "asIssued": "発行時の請求書",
+      "asIssuedHint": "顧客に送付した書類",
+      "hint": "発行後の入金と控除、および残高",
+      "banner": "このPDFは発行時の請求書です。その後 {{paid}} が入金され、{{deducted}} が控除されました。明細書で各項目と残高を確認できます。",
+      "title": "取引明細書"
     }
   },
   "collections": {
@@ -1943,7 +2084,18 @@
       "uscc": "USCC"
     },
     "otherCountries": "その他の国",
-    "anyCountry": "その他すべての国"
+    "anyCountry": "その他すべての国",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / バーコード",
+      "service_code": "サービスコード(LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "市町村サービスコード",
+      "hs_code": "HSコード",
+      "sat_product_code": "SAT製品/サービスコード",
+      "sat_unit_code": "SAT単位コード"
+    }
   },
   "common": {
     "selectTimezone": "タイムゾーンを選択",

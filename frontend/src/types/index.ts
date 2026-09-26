@@ -1066,6 +1066,11 @@ export type InvoiceState =
 
 export interface InvoiceLine {
   id: string
+  /** Where the line came from, when it came from the catalog. The
+   *  values below are still the line's own copy. */
+  product_id: string | null
+  price_id: string | null
+  fiscal_refs: Record<string, string> | null
   description: string
   quantity: string
   unit: string | null
@@ -1083,6 +1088,98 @@ export interface InvoiceLineInput {
   unit?: string | null
   unit_price: string
   tax_rate?: string | null
+  /** Set when the line was filled from a product. Kept when the person
+   *  then edits the values: it is still that product, at their price. */
+  product_id?: string | null
+  price_id?: string | null
+  /** Fiscal references for the line. Filled from the product by the
+   *  server when omitted. */
+  fiscal_refs?: Record<string, string> | null
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+export type ProductKind = 'service' | 'product'
+export type PriceBilling = 'one_time' | 'recurring'
+
+export interface ProductPrice {
+  id: string
+  product_id: string
+  currency: string
+  unit_price: string
+  tax_rate: string | null
+  billing: PriceBilling
+  interval: InvoiceScheduleFrequency | null
+  nickname: string | null
+  /** A name of the workspace's own choosing, unique among its prices. */
+  lookup_key: string | null
+  active: boolean
+  external_source: string | null
+  external_id: string | null
+  created_at: string
+}
+
+/** A fiscal reference the workspace's jurisdiction suggests on a product. */
+export interface ProductFieldSpec {
+  key: string
+  label_key: string
+  /** Which product kinds it applies to; empty means both. */
+  kinds: ProductKind[]
+}
+
+export interface Product {
+  id: string
+  name: string
+  description: string | null
+  kind: ProductKind
+  unit: string | null
+  active: boolean
+  origin: string
+  external_source: string | null
+  external_id: string | null
+  custom_fields: Record<string, string> | null
+  /** Fiscal references keyed as the jurisdiction suggests (`ncm`,
+   *  `service_code`, `hs_code`...); any key is accepted. */
+  fiscal_refs: Record<string, string> | null
+  prices: ProductPrice[]
+  created_at: string
+  /** Derived by the server: how many invoices name this product. */
+  invoice_count: number
+}
+
+export interface InstallmentInput {
+  due_date: string
+  amount: string
+  label?: string | null
+}
+
+export type InstallmentState = 'open' | 'partial' | 'paid' | 'overdue' | 'draft' | 'void' | 'uncollectible'
+
+export interface InvoiceInstallment {
+  id: string
+  position: number
+  label: string | null
+  due_date: string
+  amount: string
+  /** Derived: how much of it the settled money covers, first-to-last. */
+  settled: string
+  state: InstallmentState
+}
+
+export type DeductionKind = 'withholding_tax' | 'gateway_fee' | 'fx_difference' | 'other'
+
+/** Debt closed without money: tax withheld, a fee kept. Counts towards
+ *  settled, never towards received. */
+export interface InvoiceDeduction {
+  id: string
+  kind: DeductionKind
+  tax_kind: string | null
+  amount: string
+  note: string | null
+  transaction_id: string | null
+  deducted_at: string
 }
 
 export interface InvoiceAllocation {
@@ -1154,8 +1251,12 @@ export interface Invoice {
   tax_total: string
   total: string
   amount_paid: string
+  /** Settled without cash. Not part of `amount_paid`. */
+  amount_deducted: string
   balance: string
   days_overdue: number
+  /** The next date money is late after; null once nothing is owed. */
+  next_due_date: string | null
   notes: string | null
   internal_notes: string | null
   custom_fields: Record<string, string> | null
@@ -1181,6 +1282,8 @@ export interface Invoice {
   period_end: string | null
   lines: InvoiceLine[]
   allocations: InvoiceAllocation[]
+  installments: InvoiceInstallment[]
+  deductions: InvoiceDeduction[]
   created_at: string
 }
 
@@ -1365,6 +1468,8 @@ export interface InvoiceDocumentPayload {
   tax_total: string
   total: string
   amount_paid: string
+  /** Settled without money arriving: tax withheld, a fee kept. */
+  amount_deducted: string
   balance: string
   issuer: InvoiceDocumentParty
   client: InvoiceDocumentParty
@@ -1386,6 +1491,8 @@ export interface InvoiceDocumentPayload {
    *  that file is the document and the page below is only a summary of
    *  it — nothing here needs redrawing. */
   source_file: { id: string; filename: string; content_type: string } | null
+  /** The dates the money is expected on, when more than one. */
+  installments: { label: string | null; due_date: string; amount: string }[]
 }
 
 export interface IssuerTaxId {
